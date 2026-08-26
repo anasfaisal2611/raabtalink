@@ -27,7 +27,7 @@ class SOSReport(SQLModel,table=True):
     latitude:Optional[float]=None
     longitude:Optional[float]=None
     people_count:int=Field(default=1)
-    category:EmergencyCategory=Field(default_factory=EmergencyCategory.other)
+    category:EmergencyCategory=Field(default=EmergencyCategory.other)
 
     severity:Severity=Field(default=Severity.unknown)
     ai_reasoning:Optional[str]=None
