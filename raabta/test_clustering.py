@@ -1,4 +1,4 @@
-from app.services.clustering_sevice import find_nearby_reports
+from app.services.clustering_service import find_nearby_reports
 class FakeReport():
     def __init__(self,sos_id,latitude,longitude):
         self.sos_id=sos_id

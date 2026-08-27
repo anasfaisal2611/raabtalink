@@ -1,5 +1,5 @@
 from sqlmodel import Session
-from app.services.clustering_sevice import find_nearby_reports,get_all_reports
+from app.services.clustering_service import find_nearby_reports,get_all_reports
 
 from app.db import engine
 
