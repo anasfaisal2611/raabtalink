@@ -1,8 +1,10 @@
 from math import sin,cos,atan2,sqrt, radians
 from sqlmodel import Session,select
+from app.db import engine
 from app.models import SOSReport
 import ollama
 import json
+from app.services.agents.agentic_service import Clustering_Agent
 
 CLUSTERING_MODEL="qwen2.5:1.5b"
 CLUSTERING_PROMPT=(
@@ -68,6 +70,20 @@ def find_duplicate_reports(nearby_reports:list,new_report):
         parsed={"is_duplicate": False, "matching_sos_id": None, "reasoning": f"Could not parse: {raw_data[:100]}"}
 
     return parsed
+
+def run_cluster_agent_for_report(sos_id:str):
+    with Session(engine) as session:
+        report=session.get(SOSReport,sos_id)
+        if report is None or report.latitude is None:
+            return 
+        all_reports=get_all_reports(session)
+        nearby_reports=find_nearby_reports(report.latitude,report.longitude,all_reports,exclude_id=sos_id)
+        cluster_reports=nearby_reports+[report]
+        llm=CLUSTERING_MODEL
+        agent=Clustering_Agent(llm,session)
+        agent.run(cluster_reports)
+
+
 
 
     
