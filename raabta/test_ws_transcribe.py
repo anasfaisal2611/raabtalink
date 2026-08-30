@@ -20,8 +20,10 @@ import websockets
 # ---- config ----
 WS_URL = "ws://localhost:8000/sos/ws/listen?sender_id=test-device&latitude=67.99&longitude=78.99&people_count=14"
 SAMPLE_RATE = 16000       # 16 kHz (whisper requirement)
-CHUNK_SECONDS = 5          # send audio every N seconds
-RECORD_SECONDS = 20        # how long to record
+WINDOW_SECONDS = 8        # send last 8s of audio each time
+SEND_EVERY_SECONDS = 4    # send every 4 seconds
+MAX_BUFFER = SAMPLE_RATE * 20  # cap buffer at 20s
+RECORD_SECONDS = 30        # how long to record
 
 audio_queue: queue.Queue = queue.Queue()
 stop_flag = asyncio.Event()
@@ -32,26 +34,46 @@ def audio_callback(indata, frames, time_info, status):
     if status:
         print(f"  [audio] {status}", file=sys.stderr)
     pcm16 = (indata[:, 0] * 32767).astype(np.int16)
-    audio_queue.put(pcm16.tobytes())
+    audio_queue.put(pcm16)
 
 
 async def send_audio(ws: websockets.WebSocketClientProtocol):
-    """Drain the audio queue and push chunks over the WebSocket."""
+    """Sliding window: accumulate audio and send the last 8s every 4s."""
+    buffer = np.array([], dtype=np.int16)
+    window_samples = SAMPLE_RATE * WINDOW_SECONDS
+    send_samples = SAMPLE_RATE * SEND_EVERY_SECONDS
+    max_samples = SAMPLE_RATE * 20
+    samples_since_send = 0
     sent = 0
+
     while not stop_flag.is_set():
         try:
-            data = audio_queue.get(timeout=0.5)
+            chunk = audio_queue.get(timeout=0.5)
         except queue.Empty:
             continue
-        await ws.send(data)
+
+        buffer = np.concatenate([buffer, chunk])
+        samples_since_send += len(chunk)
+
+        # Trim buffer
+        if len(buffer) > max_samples:
+            buffer = buffer[-max_samples:]
+
+        # Send sliding window
+        if samples_since_send >= send_samples and len(buffer) >= SAMPLE_RATE * 2:
+            samples_since_send = 0
+            window = buffer[-window_samples:] if len(buffer) > window_samples else buffer
+            data = window.tobytes()
+            await ws.send(data)
+            sent += 1
+            print(f"  >>> chunk {sent} ({len(data):,} bytes, window={len(window)/SAMPLE_RATE:.1f}s)")
+
+    # Send final window
+    if len(buffer) >= SAMPLE_RATE:
+        window = buffer[-window_samples:] if len(buffer) > window_samples else buffer
+        await ws.send(window.tobytes())
         sent += 1
-        print(f"  >>> chunk {sent} ({len(data):,} bytes)")
-    # Drain anything left
-    while not audio_queue.empty():
-        data = audio_queue.get_nowait()
-        await ws.send(data)
-        sent += 1
-        print(f"  >>> chunk {sent} ({len(data):,} bytes) [drain]")
+        print(f"  >>> chunk {sent} ({len(window.tobytes()):,} bytes) [final]")
 
 
 async def listen(ws: websockets.WebSocketClientProtocol):
@@ -65,7 +87,7 @@ async def listen(ws: websockets.WebSocketClientProtocol):
                 continue
 
             if "transcript" in msg:
-                print(f"  <<< [transcript] {msg['transcript']}")
+                print(f"\r  <<< {msg['transcript']:<80}", end="", flush=True)
             if msg.get("status") == "report_saved":
                 print(
                     f"  <<< [saved] id={msg['sos_id'][:12]}…  "

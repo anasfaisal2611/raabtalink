@@ -2,17 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0403" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta
-      name="description"
-      content="RaabtaLink offline emergency SOS. Record a voice message, capture GPS, and save it on this device."
-    />
     <title>RaabtaLink</title>
     <link rel="manifest" href="./manifest.json" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
@@ -20,123 +12,91 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <div class="atmosphere" aria-hidden="true">
-      <span class="fire-glow fire-left"></span>
-      <span class="fire-glow fire-right"></span>
-      <span class="fire-glow fire-base"></span>
-      <span class="smoke smoke-a"></span>
-      <span class="smoke smoke-b"></span>
-      <span class="smoke smoke-c"></span>
-      <span class="siren"></span>
-      <span class="hazard-tape"></span>
-      <span class="mesh"></span>
-      <span class="grain"></span>
-      <div id="embers" class="embers"></div>
-    </div>
-    <div class="scene">
     <div class="app">
       <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <h1>RaabtaLink</h1>
-        </div>
+        <h1>RaabtaLink</h1>
         <p id="connectionStatus" class="net-pill" data-state="checking">Checking</p>
       </header>
 
-      <nav class="tabs" aria-label="App mode">
-        <button class="tab is-active" data-view="sos" type="button">
-          Emergency SOS
-        </button>
-        <button class="tab" data-view="cases" type="button">
-          Cases
-          <span id="caseCount" class="count">0</span>
-        </button>
-      </nav>
-
-      <main id="view-sos" class="view" aria-label="Create emergency SOS">
-        <section class="panel location-panel">
-          <div class="panel-label">
-            <span aria-hidden="true">📍</span>
-            Location
-          </div>
-          <p id="gpsStatus" class="gps-status" data-state="pending">
-            Getting location…
-          </p>
-          <p id="gpsCoords" class="gps-coords" hidden></p>
-          <button id="retryGps" class="text-btn" type="button" hidden>
-            Retry location
-          </button>
-        </section>
-
-        <section class="record-panel" aria-label="Voice recording">
-          <p id="recordHint" class="record-hint">Hold to record</p>
-          <p id="recordTimer" class="record-timer" hidden>00:00</p>
-          <button
-            id="recordBtn"
-            class="record-btn"
-            type="button"
-            aria-label="Hold to record a voice SOS"
-          >
-            <span class="record-glow" aria-hidden="true"></span>
-            <span class="record-orbit" aria-hidden="true"></span>
-            <span class="record-orbit orbit-slow" aria-hidden="true"></span>
-            <span class="record-ring" aria-hidden="true"></span>
-            <span class="record-core" aria-hidden="true"></span>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="9" y="3" width="6" height="11" rx="3" />
-              <path d="M6 11a6 6 0 0 0 12 0" fill="none" stroke="currentColor" stroke-width="2" />
-              <path d="M12 17v3M9 20h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-            </svg>
-          </button>
-          <div id="playbackRow" class="playback-row" hidden>
-            <button id="playBtn" class="ghost-btn" type="button">Play voice</button>
-            <span id="audioMeta" class="audio-meta"></span>
-          </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-label">Emergency type</div>
-          <div id="typeGrid" class="type-grid" role="radiogroup" aria-label="Emergency type">
-            <button class="type-chip is-selected" type="button" role="radio" aria-checked="true" data-type="Medical">Medical</button>
-            <button class="type-chip" type="button" role="radio" aria-checked="false" data-type="Trapped">Trapped</button>
-            <button class="type-chip" type="button" role="radio" aria-checked="false" data-type="Fire">Fire</button>
-            <button class="type-chip" type="button" role="radio" aria-checked="false" data-type="Injury">Injury</button>
-            <button class="type-chip" type="button" role="radio" aria-checked="false" data-type="Missing">Missing</button>
-            <button class="type-chip" type="button" role="radio" aria-checked="false" data-type="Other">Other</button>
-          </div>
-        </section>
-
-        <section class="panel people-panel">
-          <div class="panel-label">
-            <span aria-hidden="true">👥</span>
-            People
-          </div>
-          <div class="stepper">
-            <button id="peopleMinus" class="stepper-btn" type="button" aria-label="Fewer people">−</button>
-            <span id="peopleCount" class="stepper-value" aria-live="polite">1</span>
-            <button id="peoplePlus" class="stepper-btn" type="button" aria-label="More people">+</button>
-          </div>
-        </section>
-
-        <button id="sendBtn" class="send-btn" type="button">
-          🚨 Send SOS
-        </button>
-
-        <p id="appStatus" class="app-status" role="status" aria-live="polite">
-          Ready — works without internet
-        </p>
-      </main>
-
-      <section id="view-cases" class="view" hidden aria-label="Saved SOS cases">
-        <p class="cases-intro">
-          Cases saved on this device. Voice and GPS stay here until a later sync.
-        </p>
-        <div id="casesList" class="cases-list"></div>
-        <p id="casesEmpty" class="empty-state">
-          No SOS saved yet. Create one from Emergency SOS.
-        </p>
+      <!-- GPS Panel -->
+      <section class="panel gps-panel">
+        <div class="panel-label">📍 Location</div>
+        <p id="gpsStatus" class="gps-status" data-state="pending">Getting location…</p>
+        <p id="gpsCoords" class="gps-coords" hidden></p>
+        <p id="gpsSource" class="gps-source" hidden></p>
+        <div class="gps-actions">
+          <button id="retryGps" class="btn btn-sm" type="button" hidden>Retry GPS</button>
+          <button id="pickLocation" class="btn btn-sm" type="button">Pick manually</button>
+        </div>
+        <div id="locationPicker" class="location-picker" hidden>
+          <p class="picker-label">Select your area:</p>
+          <div id="locationGrid" class="location-grid"></div>
+        </div>
       </section>
-    </div>
+
+      <!-- People -->
+      <section class="panel people-panel">
+        <div class="panel-label">👥 People</div>
+        <div class="stepper">
+          <button id="peopleMinus" class="stepper-btn" type="button">−</button>
+          <span id="peopleCount" class="stepper-value">1</span>
+          <button id="peoplePlus" class="stepper-btn" type="button">+</button>
+        </div>
+      </section>
+
+      <!-- Live Transcribe -->
+      <section class="panel live-panel">
+        <div class="panel-label">🎙️ Live Transcription</div>
+        <button id="liveBtn" class="btn live-btn" type="button">Start Live Transcribe</button>
+        <div id="liveTranscript" class="live-transcript" hidden>
+          <div id="liveTranscriptText" class="live-transcript-text"></div>
+          <div id="liveServerMsgs" class="live-server-msgs"></div>
+        </div>
+      </section>
+
+      <!-- Status -->
+      <p id="appStatus" class="app-status">Ready</p>
+
+      <!-- Healthcare Responder Auth -->
+      <section class="panel auth-panel">
+        <div class="panel-label">🏥 Healthcare Responder</div>
+
+        <!-- Logged-in profile (shown when authenticated) -->
+        <div id="responderProfile" class="responder-profile" hidden>
+          <p id="responderName" class="responder-name"></p>
+          <p id="responderOrg" class="responder-org"></p>
+          <p id="responderRole" class="responder-role"></p>
+          <button id="logoutBtn" class="btn btn-sm" type="button">Logout</button>
+        </div>
+
+        <!-- Auth forms (shown when not authenticated) -->
+        <div id="authForms">
+          <div class="auth-tabs">
+            <button id="tabLogin" class="auth-tab is-active" type="button">Login</button>
+            <button id="tabRegister" class="auth-tab" type="button">Register</button>
+          </div>
+
+          <!-- Login form -->
+          <form id="loginForm" class="auth-form">
+            <input id="loginUser" class="auth-input" type="text" placeholder="Username" required />
+            <input id="loginPass" class="auth-input" type="password" placeholder="Password" required />
+            <button class="btn auth-submit" type="submit">Login</button>
+          </form>
+
+          <!-- Register form -->
+          <form id="registerForm" class="auth-form" hidden>
+            <input id="regUser" class="auth-input" type="text" placeholder="Username" required />
+            <input id="regEmail" class="auth-input" type="email" placeholder="Email" required />
+            <input id="regPass" class="auth-input" type="password" placeholder="Password" required />
+            <input id="regName" class="auth-input" type="text" placeholder="Full Name" required />
+            <input id="regOrg" class="auth-input" type="text" placeholder="Organization (hospital, NGO)" required />
+            <input id="regLicense" class="auth-input" type="text" placeholder="License ID (optional)" />
+            <button class="btn auth-submit" type="submit">Register</button>
+          </form>
+
+          <p id="authMsg" class="auth-msg"></p>
+        </div>
+      </section>
     </div>
 
     <script src="./app.js"></script>

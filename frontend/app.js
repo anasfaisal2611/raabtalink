@@ -1,633 +1,459 @@
-const DB_NAME = "RaabtaLinkDB";
-const DB_VERSION = 1;
-const STORE_NAME = "sos";
+/* ===== RaabtaLink PWA — app.js ===== */
+
+// API is always on the same origin — works whether served standalone or via FastAPI
+const API_BASE = `${location.protocol}//${location.host}`.replace(/\/app.*$/, "");
+
+// Known offline locations (bundled — no internet needed)
+const KNOWN_LOCATIONS = [
+  { name: "Clifton, Karachi",       lat: 24.8108, lon: 67.0226 },
+  { name: "DHA Phase 5, Karachi",   lat: 24.8050, lon: 67.0600 },
+  { name: "Gulshan, Karachi",       lat: 24.9200, lon: 67.0900 },
+  { name: "Saddar, Karachi",        lat: 24.8607, lon: 67.0011 },
+  { name: "North Nazimabad",        lat: 24.9600, lon: 67.0400 },
+  { name: "Malir, Karachi",         lat: 24.9000, lon: 67.1600 },
+  { name: "Korangi, Karachi",       lat: 24.8400, lon: 67.1200 },
+  { name: "LIQUATABAD, Karachi",    lat: 24.8800, lon: 67.0100 },
+];
+
 const MAX_PEOPLE = 99;
+const GPS_CACHE_KEY = "raabta_last_gps";
 
 const state = {
   peopleCount: 1,
-  emergencyType: "Medical",
-  gps: {
-    latitude: null,
-    longitude: null,
-    timestamp: null,
-    error: null,
-  },
-  audioBlob: null,
-  audioUrl: null,
-  mediaRecorder: null,
-  mediaStream: null,
-  chunks: [],
-  recording: false,
-  wantRecording: false,
-  recordStartedAt: 0,
-  timerId: null,
-  playing: false,
-  caseAudioUrl: null,
+  gps: { latitude: null, longitude: null, source: null },
+  // live transcribe
+  ws: null,
+  liveAudioCtx: null,
+  liveProcessorNode: null,
+  liveStream: null,
+  livePcmBuffer: [],
+  isLive: false,
 };
 
 const els = {
   connectionStatus: document.getElementById("connectionStatus"),
   gpsStatus: document.getElementById("gpsStatus"),
   gpsCoords: document.getElementById("gpsCoords"),
+  gpsSource: document.getElementById("gpsSource"),
   retryGps: document.getElementById("retryGps"),
-  recordBtn: document.getElementById("recordBtn"),
-  recordHint: document.getElementById("recordHint"),
-  recordTimer: document.getElementById("recordTimer"),
-  playbackRow: document.getElementById("playbackRow"),
-  playBtn: document.getElementById("playBtn"),
-  audioMeta: document.getElementById("audioMeta"),
+  pickLocation: document.getElementById("pickLocation"),
+  locationPicker: document.getElementById("locationPicker"),
+  locationGrid: document.getElementById("locationGrid"),
   peopleCount: document.getElementById("peopleCount"),
   peopleMinus: document.getElementById("peopleMinus"),
   peoplePlus: document.getElementById("peoplePlus"),
-  sendBtn: document.getElementById("sendBtn"),
+  liveBtn: document.getElementById("liveBtn"),
+  liveTranscript: document.getElementById("liveTranscript"),
+  liveTranscriptText: document.getElementById("liveTranscriptText"),
+  liveServerMsgs: document.getElementById("liveServerMsgs"),
   appStatus: document.getElementById("appStatus"),
-  caseCount: document.getElementById("caseCount"),
-  casesList: document.getElementById("casesList"),
-  casesEmpty: document.getElementById("casesEmpty"),
-  viewSos: document.getElementById("view-sos"),
-  viewCases: document.getElementById("view-cases"),
 };
 
-let dbPromise = null;
-let playbackAudio = null;
-let caseAudio = null;
+/* ---- Helpers ---- */
 
-function openDatabase() {
-  if (dbPromise) return dbPromise;
-
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
-        store.createIndex("timestamp", "timestamp");
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-  return dbPromise;
+function setStatus(msg, kind = "") {
+  els.appStatus.textContent = msg;
+  kind ? (els.appStatus.dataset.state = kind) : delete els.appStatus.dataset.state;
 }
 
-function getAllSos() {
-  return openDatabase().then(
-    (db) =>
-      new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, "readonly");
-        const request = tx.objectStore(STORE_NAME).getAll();
-        request.onsuccess = () => {
-          const items = request.result || [];
-          items.sort((a, b) => b.timestamp - a.timestamp);
-          resolve(items);
-        };
-        request.onerror = () => reject(request.error);
-      })
-  );
-}
-
-function saveSosRecord(record) {
-  return openDatabase().then(
-    (db) =>
-      new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, "readwrite");
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-        tx.objectStore(STORE_NAME).put(record);
-      })
-  );
-}
-
-function nextSosId(records) {
-  const max = records.reduce((highest, item) => {
-    const match = String(item.id || "").match(/SOS-(\d+)/i);
-    const value = match ? Number(match[1]) : 0;
-    return value > highest ? value : highest;
-  }, 0);
-  return `SOS-${String(max + 1).padStart(3, "0")}`;
-}
-
-function setStatus(message, kind = "") {
-  els.appStatus.textContent = message;
-  if (kind) {
-    els.appStatus.dataset.state = kind;
-  } else {
-    delete els.appStatus.dataset.state;
-  }
-}
-
-function formatCoords(lat, lng) {
-  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-}
-
-function formatClock(ms) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const minutes = String(Math.floor(total / 60)).padStart(2, "0");
-  const seconds = String(total % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
-
-function formatTime(timestamp) {
-  return new Date(timestamp).toLocaleString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    day: "numeric",
-    month: "short",
-  });
+function formatCoords(lat, lon) {
+  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 }
 
 function updateConnectionStatus() {
-  const online = navigator.onLine;
-  els.connectionStatus.textContent = online ? "Online" : "Offline";
-  els.connectionStatus.dataset.state = online ? "online" : "offline";
+  const on = navigator.onLine;
+  els.connectionStatus.textContent = on ? "Online" : "Offline";
+  els.connectionStatus.dataset.state = on ? "online" : "offline";
 }
 
-function updateGpsUi() {
-  if (state.gps.latitude != null && state.gps.longitude != null) {
-    els.gpsStatus.textContent = "Location available ✓";
-    els.gpsStatus.dataset.state = "ok";
-    els.gpsCoords.hidden = false;
-    els.gpsCoords.textContent = formatCoords(state.gps.latitude, state.gps.longitude);
-    els.retryGps.hidden = true;
-    return;
-  }
+/* ---- GPS ---- */
 
-  if (state.gps.error) {
-    els.gpsStatus.textContent = state.gps.error;
-    els.gpsStatus.dataset.state = "error";
-    els.gpsCoords.hidden = true;
-    els.retryGps.hidden = false;
+function setGps(lat, lon, source) {
+  state.gps.latitude = lat;
+  state.gps.longitude = lon;
+  state.gps.source = source;
+
+  els.gpsStatus.textContent = `Location ready (${source})`;
+  els.gpsStatus.dataset.state = source === "gps" ? "ok" : "cached";
+  els.gpsCoords.hidden = false;
+  els.gpsCoords.textContent = formatCoords(lat, lon);
+  els.gpsSource.hidden = false;
+  els.gpsSource.textContent = source === "gps"
+    ? "From device GPS"
+    : source === "manual"
+    ? "Manually selected"
+    : "From last saved location";
+  els.retryGps.hidden = true;
+}
+
+function clearGps(error) {
+  state.gps.latitude = null;
+  state.gps.longitude = null;
+  state.gps.source = null;
+  els.gpsStatus.textContent = error || "Location unavailable";
+  els.gpsStatus.dataset.state = "error";
+  els.gpsCoords.hidden = true;
+  els.gpsSource.hidden = true;
+  els.retryGps.hidden = false;
+}
+
+function cacheGps(lat, lon) {
+  try {
+    localStorage.setItem(GPS_CACHE_KEY, JSON.stringify({ lat, lon, ts: Date.now() }));
+  } catch (_) {}
+}
+
+function loadCachedGps() {
+  try {
+    const raw = localStorage.getItem(GPS_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data.lat != null && data.lon != null) return data;
+  } catch (_) {}
+  return null;
+}
+
+function captureGps() {
+  if (!navigator.geolocation) {
+    // No GPS support — try cache
+    const cached = loadCachedGps();
+    if (cached) { setGps(cached.lat, cached.lon, "cached"); return; }
+    clearGps("GPS not supported — pick a location manually");
     return;
   }
 
   els.gpsStatus.textContent = "Getting location…";
   els.gpsStatus.dataset.state = "pending";
-  els.gpsCoords.hidden = true;
   els.retryGps.hidden = true;
-}
-
-function captureGps() {
-  if (!navigator.geolocation) {
-    state.gps.error = "GPS not supported on this device";
-    updateGpsUi();
-    return;
-  }
-
-  state.gps.error = null;
-  updateGpsUi();
 
   navigator.geolocation.getCurrentPosition(
-    (position) => {
-      state.gps.latitude = position.coords.latitude;
-      state.gps.longitude = position.coords.longitude;
-      state.gps.timestamp = position.timestamp || Date.now();
-      state.gps.error = null;
-      updateGpsUi();
+    (pos) => {
+      setGps(pos.coords.latitude, pos.coords.longitude, "gps");
+      cacheGps(pos.coords.latitude, pos.coords.longitude);
     },
-    (error) => {
-      if (error.code === error.PERMISSION_DENIED) {
-        state.gps.error = "Location blocked — tap to retry";
-      } else if (error.code === error.TIMEOUT) {
-        state.gps.error = "Location timed out — tap to retry";
+    (err) => {
+      // GPS failed — try cached
+      const cached = loadCachedGps();
+      if (cached) {
+        setGps(cached.lat, cached.lon, "cached");
       } else {
-        state.gps.error = "Location unavailable — tap to retry";
+        clearGps(err.code === err.PERMISSION_DENIED
+          ? "Location denied — pick manually or allow GPS"
+          : "Location unavailable — pick manually");
       }
-      updateGpsUi();
     },
-    {
-      enableHighAccuracy: true,
-      timeout: 12000,
-      maximumAge: 15000,
-    }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
   );
 }
 
-function pickMimeType() {
-  const types = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4",
-    "audio/ogg;codecs=opus",
-    "audio/ogg",
-  ];
-  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-  return types.find((type) => MediaRecorder.isTypeSupported(type)) || "";
-}
+/* ---- Location Picker ---- */
 
-function buzz(ms) {
-  if (navigator.vibrate) navigator.vibrate(ms);
-}
-
-function revokeAudioUrl() {
-  if (state.audioUrl) {
-    URL.revokeObjectURL(state.audioUrl);
-    state.audioUrl = null;
-  }
-}
-
-function setAudioBlob(blob) {
-  revokeAudioUrl();
-  state.audioBlob = blob;
-  if (!blob) {
-    els.playbackRow.hidden = true;
-    els.recordBtn.classList.remove("has-audio");
-    els.audioMeta.textContent = "";
-    return;
-  }
-
-  state.audioUrl = URL.createObjectURL(blob);
-  els.playbackRow.hidden = false;
-  els.recordBtn.classList.add("has-audio");
-  const seconds = Math.max(1, Math.round((Date.now() - state.recordStartedAt) / 1000));
-  els.audioMeta.textContent = `Voice saved · ${seconds}s`;
-}
-
-function stopTracks() {
-  if (state.mediaStream) {
-    state.mediaStream.getTracks().forEach((track) => track.stop());
-    state.mediaStream = null;
-  }
-}
-
-function stopTimer() {
-  if (state.timerId) {
-    clearInterval(state.timerId);
-    state.timerId = null;
-  }
-}
-
-async function startRecording() {
-  if (state.recording) return;
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    setStatus("Microphone not supported in this browser", "error");
-    return;
-  }
-
-  state.wantRecording = true;
-
-  try {
-    stopPlayback();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    if (!state.wantRecording) {
-      stream.getTracks().forEach((track) => track.stop());
-      return;
-    }
-    const mimeType = pickMimeType();
-    const recorder = mimeType
-      ? new MediaRecorder(stream, { mimeType })
-      : new MediaRecorder(stream);
-
-    state.mediaStream = stream;
-    state.mediaRecorder = recorder;
-    state.chunks = [];
-    state.recording = true;
-    state.recordStartedAt = Date.now();
-
-    recorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) state.chunks.push(event.data);
-    };
-
-    recorder.onstop = () => {
-      const type = recorder.mimeType || mimeType || "audio/webm";
-      const blob = new Blob(state.chunks, { type });
-      stopTracks();
-      if (blob.size > 0) {
-        setAudioBlob(blob);
-        els.recordHint.textContent = "Voice attached";
-        setStatus("Voice captured. Review it, then send SOS.");
-      } else {
-        setAudioBlob(null);
-        els.recordHint.textContent = "Hold to record";
-        setStatus("Recording was too short. Hold the button and speak.", "error");
-      }
-    };
-
-    recorder.start();
-    if (!state.wantRecording) {
-      recorder.stop();
-      return;
-    }
-    buzz(40);
-    els.recordBtn.classList.add("is-recording");
-    els.recordBtn.classList.remove("has-audio");
-    els.recordHint.hidden = true;
-    els.recordTimer.hidden = false;
-    els.recordTimer.textContent = "00:00";
-    els.playbackRow.hidden = true;
-    setStatus("Recording… release to stop");
-
-    stopTimer();
-    state.timerId = setInterval(() => {
-      els.recordTimer.textContent = formatClock(Date.now() - state.recordStartedAt);
-    }, 200);
-  } catch (error) {
-    state.recording = false;
-    state.wantRecording = false;
-    stopTracks();
-    if (state.audioBlob) {
-      els.playbackRow.hidden = false;
-      els.recordBtn.classList.add("has-audio");
-      els.recordHint.textContent = "Voice attached";
-    }
-    setStatus("Microphone permission is needed to record a voice SOS", "error");
-  }
-}
-
-function stopRecording() {
-  state.wantRecording = false;
-  if (!state.recording || !state.mediaRecorder) return;
-
-  state.recording = false;
-  stopTimer();
-  els.recordBtn.classList.remove("is-recording");
-  els.recordHint.hidden = false;
-  els.recordTimer.hidden = true;
-  buzz(25);
-
-  if (state.mediaRecorder.state !== "inactive") {
-    state.mediaRecorder.stop();
-  }
-}
-
-function stopPlayback() {
-  if (playbackAudio) {
-    playbackAudio.pause();
-    playbackAudio.currentTime = 0;
-  }
-  state.playing = false;
-  els.playBtn.textContent = "Play voice";
-}
-
-function togglePlayback() {
-  if (!state.audioUrl) return;
-
-  if (!playbackAudio || playbackAudio.src !== state.audioUrl) {
-    playbackAudio = new Audio(state.audioUrl);
-    playbackAudio.addEventListener("ended", () => {
-      state.playing = false;
-      els.playBtn.textContent = "Play voice";
+function buildLocationPicker() {
+  els.locationGrid.innerHTML = "";
+  KNOWN_LOCATIONS.forEach((loc) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "location-chip";
+    btn.textContent = loc.name;
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".location-chip").forEach((c) => c.classList.remove("is-selected"));
+      btn.classList.add("is-selected");
+      setGps(loc.lat, loc.lon, "manual");
+      els.locationPicker.hidden = true;
+      setStatus(`Location set: ${loc.name}`);
     });
-  }
-
-  if (state.playing) {
-    stopPlayback();
-    return;
-  }
-
-  playbackAudio.play();
-  state.playing = true;
-  els.playBtn.textContent = "Stop";
+    els.locationGrid.appendChild(btn);
+  });
 }
 
-function setPeople(value) {
-  state.peopleCount = Math.min(MAX_PEOPLE, Math.max(1, value));
+/* ---- People Stepper ---- */
+
+function setPeople(val) {
+  state.peopleCount = Math.min(MAX_PEOPLE, Math.max(1, val));
   els.peopleCount.textContent = String(state.peopleCount);
 }
 
-function setupTypePicker() {
-  const chips = document.querySelectorAll(".type-chip");
-  chips.forEach((chip) => {
-    chip.addEventListener("click", () => {
-      chips.forEach((item) => {
-        item.classList.toggle("is-selected", item === chip);
-        item.setAttribute("aria-checked", item === chip ? "true" : "false");
-      });
-      state.emergencyType = chip.dataset.type;
-    });
-  });
-}
+/* ---- Live Transcribe (WebSocket) ---- */
 
-function setupTabs() {
-  const tabs = document.querySelectorAll(".tab");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", async () => {
-      tabs.forEach((item) => item.classList.toggle("is-active", item === tab));
-      const view = tab.dataset.view;
-      els.viewSos.hidden = view !== "sos";
-      els.viewCases.hidden = view !== "cases";
-      if (view === "cases") await renderCases();
-    });
-  });
-}
-
-async function renderCases() {
-  const records = await getAllSos();
-  els.caseCount.textContent = String(records.length);
-  els.casesList.innerHTML = "";
-  els.casesEmpty.hidden = records.length > 0;
-
-  records.forEach((record) => {
-    const card = document.createElement("article");
-    card.className = "case-card";
-
-    const gpsText =
-      record.latitude != null && record.longitude != null
-        ? `GPS: ${formatCoords(record.latitude, record.longitude)}`
-        : "GPS: not captured";
-
-    card.innerHTML = `
-      <div class="case-top">
-        <div>
-          <div class="case-id">${record.id}</div>
-          <div class="case-type">${record.emergencyType}</div>
-        </div>
-        <div class="case-flags">
-          <span class="flag pending">${record.status}</span>
-          <span class="flag offline">${record.synced ? "Synced" : "Not synced"}</span>
-        </div>
-      </div>
-      <p class="case-meta">${record.peopleCount} people · ${formatTime(record.timestamp)}</p>
-      <p class="case-gps">${gpsText}</p>
-      <div class="case-actions"></div>
-    `;
-
-    const actions = card.querySelector(".case-actions");
-    if (record.audio) {
-      const play = document.createElement("button");
-      play.className = "play-mini";
-      play.type = "button";
-      play.textContent = "Play voice";
-      play.addEventListener("click", () => playCaseAudio(record, play));
-      actions.appendChild(play);
-    } else {
-      const missing = document.createElement("span");
-      missing.className = "audio-meta";
-      missing.textContent = "No voice attached";
-      actions.appendChild(missing);
-    }
-
-    els.casesList.appendChild(card);
-  });
-}
-
-function stopCaseAudio() {
-  if (caseAudio) {
-    caseAudio.pause();
-    caseAudio = null;
+async function startLiveTranscribe() {
+  if (state.isLive) return;
+  if (state.gps.latitude == null) {
+    setStatus("Need location first — allow GPS or pick manually", "error");
+    return;
   }
-  if (state.caseAudioUrl) {
-    URL.revokeObjectURL(state.caseAudioUrl);
-    state.caseAudioUrl = null;
-  }
-  document.querySelectorAll(".play-mini").forEach((btn) => {
-    btn.textContent = "Play voice";
-    btn.dataset.playing = "false";
-  });
-}
-
-function playCaseAudio(record, button) {
-  const alreadyPlaying = button.dataset.playing === "true";
-  stopCaseAudio();
-  if (alreadyPlaying) return;
-
-  const url = URL.createObjectURL(record.audio);
-  state.caseAudioUrl = url;
-  caseAudio = new Audio(url);
-  button.dataset.playing = "true";
-  button.textContent = "Stop";
-  caseAudio.addEventListener("ended", stopCaseAudio);
-  caseAudio.play();
-}
-
-async function sendSos() {
-  if (state.recording) stopRecording();
-
-  els.sendBtn.disabled = true;
-  setStatus("Saving SOS on this device…");
 
   try {
-    if (state.gps.latitude == null) captureGps();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    const inputRate = audioCtx.sampleRate;
+    const targetRate = 16000;
 
-    const records = await getAllSos();
-    const record = {
-      id: nextSosId(records),
-      timestamp: Date.now(),
-      latitude: state.gps.latitude,
-      longitude: state.gps.longitude,
-      gpsTimestamp: state.gps.timestamp,
-      emergencyType: state.emergencyType,
-      peopleCount: state.peopleCount,
-      audio: state.audioBlob || null,
-      audioType: state.audioBlob ? state.audioBlob.type : "",
-      status: "Pending",
-      synced: false,
+    let pcmBuffer = [];
+    state.livePcmBuffer = pcmBuffer;  // expose for flush on stop
+    const WINDOW_SECONDS = 8;   // send last 8s of audio each time
+    const SEND_EVERY_SECONDS = 4;  // send every 4 seconds
+    const MAX_BUFFER = targetRate * 20;  // cap buffer at 20s
+    const WINDOW_SAMPLES = targetRate * WINDOW_SECONDS;
+    const SEND_SAMPLES = targetRate * SEND_EVERY_SECONDS;
+    let samplesSinceSend = 0;
+
+    processor.onaudioprocess = (event) => {
+      if (!state.isLive || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+      const input = event.inputBuffer.getChannelData(0);
+
+      // Downsample to 16kHz
+      const ratio = inputRate / targetRate;
+      const outLen = Math.round(input.length / ratio);
+      const ds = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const idx = i * ratio;
+        const lo = Math.floor(idx);
+        const hi = Math.min(lo + 1, input.length - 1);
+        ds[i] = input[lo] * (1 - (idx - lo)) + input[hi] * (idx - lo);
+      }
+
+      for (let i = 0; i < ds.length; i++) pcmBuffer.push(ds[i]);
+      samplesSinceSend += outLen;
+
+      // Trim buffer if it exceeds max
+      if (pcmBuffer.length > MAX_BUFFER) {
+        pcmBuffer.splice(0, pcmBuffer.length - MAX_BUFFER);
+      }
+
+      // Send sliding window every SEND_EVERY_SECONDS
+      if (samplesSinceSend >= SEND_SAMPLES && pcmBuffer.length >= targetRate * 2) {
+        samplesSinceSend = 0;
+        const start = Math.max(0, pcmBuffer.length - WINDOW_SAMPLES);
+        const window = pcmBuffer.slice(start);
+        const pcm16 = new Int16Array(window.length);
+        for (let i = 0; i < window.length; i++) {
+          const s = Math.max(-1, Math.min(1, window[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        state.ws.send(pcm16.buffer);
+      }
     };
 
-    await saveSosRecord(record);
-    await renderCases();
-
-    setStatus(`Saved offline · ${record.id}`, "saved");
-    els.recordHint.textContent = state.audioBlob ? "Voice attached" : "Hold to record";
-  } catch (error) {
-    setStatus("Could not save SOS on this device", "error");
-  } finally {
-    els.sendBtn.disabled = false;
-  }
-}
-
-function bindRecordButton() {
-  const btn = els.recordBtn;
-  let hold = false;
-
-  const begin = (event) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    hold = true;
-    btn.setPointerCapture(event.pointerId);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
-    startRecording();
-  };
-
-  const end = () => {
-    if (!hold) return;
-    hold = false;
-    window.removeEventListener("pointerup", end);
-    window.removeEventListener("pointercancel", end);
-    stopRecording();
-  };
-
-  btn.addEventListener("pointerdown", begin);
-  btn.addEventListener("pointerup", end);
-  btn.addEventListener("pointercancel", end);
-  btn.addEventListener("contextmenu", (event) => event.preventDefault());
-
-  btn.addEventListener("keydown", (event) => {
-    if (event.code === "Space" || event.code === "Enter") {
-      event.preventDefault();
-      if (state.recording) stopRecording();
-      else startRecording();
-    }
-  });
-}
-
-function spawnEmbers() {
-  const host = document.getElementById("embers");
-  if (!host || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-  host.innerHTML = "";
-  const count = window.innerWidth < 480 ? 18 : 28;
-  for (let i = 0; i < count; i += 1) {
-    const ember = document.createElement("span");
-    ember.className = "ember";
-    ember.style.left = `${Math.random() * 100}%`;
-    ember.style.animationDelay = `${Math.random() * 8}s`;
-    ember.style.animationDuration = `${5 + Math.random() * 7}s`;
-    ember.style.setProperty("--x", `${Math.random() * 90 - 45}px`);
-    ember.style.width = ember.style.height = `${3 + Math.random() * 4}px`;
-    host.appendChild(ember);
-  }
-}
-
-function setupSceneTilt() {
-  const app = document.querySelector(".app");
-  if (!app) return;
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  if (!window.matchMedia("(pointer: fine)").matches) return;
-
-  window.addEventListener("pointermove", (event) => {
-    const x = event.clientX / window.innerWidth - 0.5;
-    const y = event.clientY / window.innerHeight - 0.5;
-    app.style.setProperty("--tilt-x", `${(-y * 9).toFixed(2)}deg`);
-    app.style.setProperty("--tilt-y", `${(x * 12).toFixed(2)}deg`);
-  });
-}
-  if (!("serviceWorker" in navigator)) return;
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {
-      setStatus("Offline cache unavailable, but local saving still works", "error");
+    const params = new URLSearchParams({
+      sender_id: "pwa-" + Date.now(),
+      latitude: String(state.gps.latitude),
+      longitude: String(state.gps.longitude),
+      people_count: String(state.peopleCount),
     });
+    const wsScheme = location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsScheme}//${location.host}/sos/ws/listen?${params}`;
+
+    const ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.transcript) {
+          // Replace text with latest full transcription (sliding window)
+          els.liveTranscriptText.textContent = msg.transcript;
+        }
+        if (msg.status === "report_saved") {
+          const div = document.createElement("div");
+          div.className = "server-msg";
+          div.textContent = `Saved: ${msg.sos_id.slice(0, 8)}… | ${msg.severity} | ${msg.dispatch_status}`;
+          els.liveServerMsgs.appendChild(div);
+        }
+      } catch (_) {}
+    };
+
+    ws.onclose = () => { if (state.isLive) stopLiveTranscribe(); };
+    ws.onerror = () => { setStatus("WebSocket connection failed", "error"); stopLiveTranscribe(); };
+
+    state.ws = ws;
+    state.liveAudioCtx = audioCtx;
+    state.liveProcessorNode = processor;
+    state.liveStream = stream;
+    state.isLive = true;
+
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+
+    els.liveBtn.textContent = "Stop Transcribing";
+    els.liveBtn.classList.add("is-active");
+    els.liveTranscript.hidden = false;
+    els.liveTranscriptText.textContent = "";
+    els.liveServerMsgs.innerHTML = "";
+    setStatus("Live transcription active…");
+  } catch (e) {
+    setStatus("Microphone permission needed", "error");
+  }
+}
+
+function stopLiveTranscribe() {
+  // Stop capturing audio immediately
+  state.isLive = false;
+  if (state.liveProcessorNode) {
+    state.liveProcessorNode.disconnect();
+    state.liveProcessorNode.onaudioprocess = null;
+    state.liveProcessorNode = null;
+  }
+  if (state.liveAudioCtx) { state.liveAudioCtx.close().catch(() => {}); state.liveAudioCtx = null; }
+  if (state.liveStream) { state.liveStream.getTracks().forEach((t) => t.stop()); state.liveStream = null; }
+
+  // Flush remaining audio in buffer before closing
+  if (state.livePcmBuffer.length >= 16000 && state.ws && state.ws.readyState === WebSocket.OPEN) {
+    const start = Math.max(0, state.livePcmBuffer.length - 16000 * 8);
+    const window = state.livePcmBuffer.slice(start);
+    const pcm16 = new Int16Array(window.length);
+    for (let i = 0; i < window.length; i++) {
+      const s = Math.max(-1, Math.min(1, window[i]));
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    state.ws.send(pcm16.buffer);
+    setStatus("Processing final audio…");
+  }
+  state.livePcmBuffer = [];
+
+  // Keep WS open briefly to receive final transcription
+  const ws = state.ws;
+  state.ws = null;
+  setTimeout(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+  }, 3000);
+
+  els.liveBtn.textContent = "Start Live Transcribe";
+  els.liveBtn.classList.remove("is-active");
+  setStatus("Transcription stopped");
+}
+
+/* ---- Responder Auth ---- */
+
+const TOKEN_KEY = "raabta_token";
+
+function showAuthMsg(msg, ok) {
+  const el = document.getElementById("authMsg");
+  el.textContent = msg;
+  el.className = ok ? "auth-msg auth-ok" : "auth-msg auth-err";
+}
+
+async function doRegister(e) {
+  e.preventDefault();
+  const body = {
+    username: document.getElementById("regUser").value.trim(),
+    email: document.getElementById("regEmail").value.trim(),
+    password: document.getElementById("regPass").value,
+    full_name: document.getElementById("regName").value.trim(),
+    organization: document.getElementById("regOrg").value.trim(),
+    license_id: document.getElementById("regLicense").value.trim() || null,
+  };
+  try {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) { showAuthMsg(`Server error: ${text.slice(0, 120)}`, false); return; }
+    if (!res.ok) { showAuthMsg(data.detail || "Registration failed", false); return; }
+    showAuthMsg(`Registered as ${data.username}. You can now log in.`, true);
+    document.getElementById("tabLogin").click();
+  } catch (err) {
+    showAuthMsg(`Error: ${err.message}`, false);
+  }
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById("loginUser").value.trim();
+  const password = document.getElementById("loginPass").value;
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+    });
+    const data = await res.json();
+    if (!res.ok) { showAuthMsg(data.detail || "Login failed", false); return; }
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    showAuthMsg("", true);
+    await loadProfile();
+  } catch (err) {
+    showAuthMsg(`Error: ${err.message}`, false);
+  }
+}
+
+function doLogout() {
+  localStorage.removeItem(TOKEN_KEY);
+  document.getElementById("responderProfile").hidden = true;
+  document.getElementById("authForms").hidden = false;
+}
+
+async function loadProfile() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return;
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) { localStorage.removeItem(TOKEN_KEY); return; }
+    const data = await res.json();
+    document.getElementById("responderName").textContent = data.full_name;
+    document.getElementById("responderOrg").textContent = data.organization;
+    document.getElementById("responderRole").textContent = `Role: ${data.role}`;
+    document.getElementById("responderProfile").hidden = false;
+    document.getElementById("authForms").hidden = true;
+  } catch (_) {}
+}
+
+/* ---- Service Worker ---- */
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("./sw.js").catch(() => {
+    setStatus("Offline cache unavailable");
   });
 }
 
-async function init() {
+/* ---- Init ---- */
+
+function init() {
   updateConnectionStatus();
   window.addEventListener("online", updateConnectionStatus);
   window.addEventListener("offline", updateConnectionStatus);
 
-  setupTabs();
-  setupTypePicker();
-  bindRecordButton();
-  spawnEmbers();
-  setupSceneTilt();
+  buildLocationPicker();
+
+  els.retryGps.addEventListener("click", captureGps);
+  els.pickLocation.addEventListener("click", () => {
+    els.locationPicker.hidden = !els.locationPicker.hidden;
+  });
+  els.peopleMinus.addEventListener("click", () => setPeople(state.peopleCount - 1));
+  els.peoplePlus.addEventListener("click", () => setPeople(state.peopleCount + 1));
+  els.liveBtn.addEventListener("click", () => {
+    if (state.isLive) stopLiveTranscribe();
+    else startLiveTranscribe();
+  });
+
   captureGps();
   registerServiceWorker();
 
-  els.retryGps.addEventListener("click", captureGps);
-  els.peopleMinus.addEventListener("click", () => setPeople(state.peopleCount - 1));
-  els.peoplePlus.addEventListener("click", () => setPeople(state.peopleCount + 1));
-  els.playBtn.addEventListener("click", togglePlayback);
-  els.sendBtn.addEventListener("click", sendSos);
-
-  try {
-    await openDatabase();
-    await renderCases();
-  } catch (error) {
-    setStatus("Local storage failed to open", "error");
-  }
+  // Auth wiring
+  document.getElementById("tabLogin").addEventListener("click", () => {
+    document.getElementById("tabLogin").classList.add("is-active");
+    document.getElementById("tabRegister").classList.remove("is-active");
+    document.getElementById("loginForm").hidden = false;
+    document.getElementById("registerForm").hidden = true;
+    document.getElementById("authMsg").textContent = "";
+  });
+  document.getElementById("tabRegister").addEventListener("click", () => {
+    document.getElementById("tabRegister").classList.add("is-active");
+    document.getElementById("tabLogin").classList.remove("is-active");
+    document.getElementById("registerForm").hidden = false;
+    document.getElementById("loginForm").hidden = true;
+    document.getElementById("authMsg").textContent = "";
+  });
+  document.getElementById("loginForm").addEventListener("submit", doLogin);
+  document.getElementById("registerForm").addEventListener("submit", doRegister);
+  document.getElementById("logoutBtn").addEventListener("click", doLogout);
+  loadProfile();
 }
 
 init();

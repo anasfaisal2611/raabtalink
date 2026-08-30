@@ -21,17 +21,18 @@ class Agent:
         self.session=session
 
     def _reason(self,system_prompt:str,user_prompt:str,fallback:dict)-> dict:
-        answer=ollama.chat(
-            model=self.llm,
-            messages=[{"role":"system","content":system_prompt},{"role":"user","content": user_prompt}]
-
-        )
-        raw_text=answer["message"]["content"]
         try:
-
-            parsed=json.loads(raw_text)
-        except json.JSONDecodeError:
-            parsed={**fallback, "reasoning": f"Could not parse model output: {raw_text[:100]}"}
+            answer=ollama.chat(
+                model=self.llm,
+                messages=[{"role":"system","content":system_prompt},{"role":"user","content": user_prompt}]
+            )
+            raw_text=answer["message"]["content"]
+            try:
+                parsed=json.loads(raw_text)
+            except json.JSONDecodeError:
+                parsed={**fallback, "reasoning": f"Could not parse model output: {raw_text[:100]}"}
+        except Exception as e:
+            parsed={**fallback, "reasoning": f"Ollama unavailable: {e}"}
 
         return parsed
 

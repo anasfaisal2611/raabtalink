@@ -5,3 +5,10 @@ sqlalchemy
 python-dotenv
 ollama
 faster-whisper
+websockets
+numpy
+sounddevice
+scipy
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart

@@ -1,12 +1,16 @@
-from fastapi import APIRouter,Depends,UploadFile,File,Form, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter,Depends,UploadFile,File,Form, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, HTTPException, status
 
-from sqlmodel import Session
+from sqlmodel import Session,select
+from datetime import datetime
+from pydantic import BaseModel
+from typing import Optional
 from app.db import engine,get_session
-from app.models import SOSReport, Priority
+from app.models import SOSReport, Priority, AgentLog, Responder
 from app.services.triage_service import triage_report  
 from app.services.whisper_service import transcribe_audio, transcribe_audio_bytes
 from app.services.clustering_service import run_cluster_agent_for_report
 from app.services.geolocation_service import resolve_gps
+from app.services.auth_service import require_role
 import shutil
 import asyncio
 
@@ -24,9 +28,67 @@ def _derive_priority(severity: str, people_count: int = 1) -> str:
 
 
 router=APIRouter(prefix="/sos",tags=["sos"])
+
+# --- PATCH schema ---
+class CaseUpdate(BaseModel):
+    dispatch_status: Optional[str] = None
+    priority_rank: Optional[str] = None
+    notes: Optional[str] = None
+
+@router.get("/reports")
+def list_reports(
+    skip: int = 0, limit: int = 50,
+    status: str = None, severity: str = None,
+    session: Session = Depends(get_session),
+    _current: Responder = Depends(require_role("responder", "admin")),
+):
+    query = select(SOSReport).offset(skip).limit(limit)
+    if status:
+        query = query.where(SOSReport.dispatch_status == status)
+    if severity:
+        query = query.where(SOSReport.severity == severity)
+    return session.exec(query).all()
+
+@router.get("/agent-logs")
+def list_agent_logs(
+    skip: int = 0, limit: int = 50,
+    session: Session = Depends(get_session),
+    _current: Responder = Depends(require_role("responder", "admin")),
+):
+    return session.exec(select(AgentLog).offset(skip).limit(limit)).all()
+
+@router.patch("/cases/{sos_id}")
+def update_case(
+    sos_id: str,
+    body: CaseUpdate,
+    session: Session = Depends(get_session),
+    current: Responder = Depends(require_role("responder", "admin")),
+):
+    report = session.get(SOSReport, sos_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if body.dispatch_status is not None:
+        report.dispatch_status = body.dispatch_status
+    if body.priority_rank is not None:
+        report.priority_rank = body.priority_rank
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    return report
+
 @router.post("",response_model=SOSReport)
 def create_sos_report(report:SOSReport,background_tasks:BackgroundTasks,session:Session=Depends(get_session)):
+    # Idempotent: if sos_id already exists, return existing report
+    existing = session.get(SOSReport, report.sos_id)
+    if existing:
+        return existing
+
     report.latitude, report.longitude = resolve_gps(report.latitude, report.longitude)
+
+    # Use client_timestamp if provided, otherwise server time (already set by default_factory)
+    if report.client_timestamp:
+        report.timestamp = report.client_timestamp
+
     triage_result=triage_report(report.emergency_text)
     report.severity=triage_result["severity"]
     report.ai_reasoning=triage_result["reasoning"]
@@ -44,6 +106,7 @@ def create_sos_from_voice(audio: UploadFile = File(...),
     latitude: float = Form(None),
     longitude: float = Form(None),
     people_count: int = Form(1),
+    client_timestamp: datetime = Form(None),
     session: Session = Depends(get_session),):
 
     temp_path=f"temp_{audio.filename}"
@@ -56,7 +119,9 @@ def create_sos_from_voice(audio: UploadFile = File(...),
         emergency_text=transcribed_text,
         latitude=latitude,
         longitude=longitude,
-        people_count=people_count
+        people_count=people_count,
+        client_timestamp=client_timestamp,
+        timestamp=client_timestamp or datetime.utcnow(),
     )
     triage_result=triage_report(report.emergency_text)
     report.severity=triage_result["severity"]
@@ -78,6 +143,7 @@ async def websocket_endpoint(
     latitude: float = Query(None),
     longitude: float = Query(None),
     people_count: int = Query(1),
+    client_timestamp: datetime = Query(None),
     session: Session = Depends(get_session),
 ):
     await websocket.accept()
@@ -110,6 +176,8 @@ async def websocket_endpoint(
                 latitude=latitude,
                 longitude=longitude,
                 people_count=people_count,
+                client_timestamp=client_timestamp,
+                timestamp=client_timestamp or datetime.utcnow(),
             )
             triage_result = triage_report(report.emergency_text)
             report.severity = triage_result["severity"]
