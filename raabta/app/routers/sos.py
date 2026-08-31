@@ -5,11 +5,12 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 from app.db import engine,get_session
-from app.models import SOSReport, Priority, AgentLog, Responder
+from app.models import SOSReport, Priority, AgentLog, Responder, EmergencyCategory, Severity
 from app.services.triage_service import triage_report  
 from app.services.whisper_service import transcribe_audio, transcribe_audio_bytes
 from app.services.clustering_service import run_cluster_agent_for_report
 from app.services.geolocation_service import resolve_gps
+from app.services.nearby_places_service import get_nearby_places
 from app.services.auth_service import require_role
 import shutil
 import asyncio
@@ -29,11 +30,42 @@ def _derive_priority(severity: str, people_count: int = 1) -> str:
 
 router=APIRouter(prefix="/sos",tags=["sos"])
 
+def _normalize_category(value: str) -> str:
+    allowed = {"medical", "trapped", "flood", "fire", "other"}
+    v = (value or "other").lower()
+    return v if v in allowed else "other"
+
+
+def _normalize_severity(value: str) -> str:
+    allowed = {"critical", "high", "medium", "low", "unknown"}
+    v = (value or "unknown").lower()
+    return v if v in allowed else "unknown"
+
+
+def _coerce_datetime(value):
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00").replace("+00:00", ""))
+    return value
+
 # --- PATCH schema ---
 class CaseUpdate(BaseModel):
     dispatch_status: Optional[str] = None
     priority_rank: Optional[str] = None
     notes: Optional[str] = None
+
+@router.get("/nearby-places")
+def nearby_places(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    radius_m: int = Query(1500, ge=200, le=5000),
+):
+    """Proxy OSM Overpass + Nominatim so the PWA gets accurate nearby landmarks."""
+    try:
+        return get_nearby_places(lat, lon, radius_m=radius_m)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch nearby places: {exc}") from exc
 
 @router.get("/reports")
 def list_reports(
@@ -85,14 +117,14 @@ def create_sos_report(report:SOSReport,background_tasks:BackgroundTasks,session:
 
     report.latitude, report.longitude = resolve_gps(report.latitude, report.longitude)
 
-    # Use client_timestamp if provided, otherwise server time (already set by default_factory)
     if report.client_timestamp:
+        report.client_timestamp = _coerce_datetime(report.client_timestamp)
         report.timestamp = report.client_timestamp
 
     triage_result=triage_report(report.emergency_text)
-    report.severity=triage_result["severity"]
+    report.severity=Severity(_normalize_severity(triage_result["severity"]))
     report.ai_reasoning=triage_result["reasoning"]
-    report.category = triage_result["category"]
+    report.category = EmergencyCategory(_normalize_category(triage_result.get("category") or str(report.category)))
     report.priority_rank = _derive_priority(report.severity, report.people_count)
     
     session.add(report)
@@ -101,32 +133,36 @@ def create_sos_report(report:SOSReport,background_tasks:BackgroundTasks,session:
     background_tasks.add_task(run_cluster_agent_for_report, report.sos_id)
     return report
 @router.post("/voice")
-def create_sos_from_voice(audio: UploadFile = File(...),
+def create_sos_from_voice(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
     sender_id: str = Form(...),
     latitude: float = Form(None),
     longitude: float = Form(None),
     people_count: int = Form(1),
     client_timestamp: datetime = Form(None),
-    session: Session = Depends(get_session),):
+    session: Session = Depends(get_session),
+):
 
     temp_path=f"temp_{audio.filename}"
     with open(temp_path,"wb") as buffer:
         shutil.copyfileobj(audio.file, buffer)
     transcribed_text=transcribe_audio(temp_path)
     latitude, longitude = resolve_gps(latitude, longitude)
+    client_ts = _coerce_datetime(client_timestamp)
     report=SOSReport(
         sender_id=sender_id,
         emergency_text=transcribed_text,
         latitude=latitude,
         longitude=longitude,
         people_count=people_count,
-        client_timestamp=client_timestamp,
-        timestamp=client_timestamp or datetime.utcnow(),
+        client_timestamp=client_ts,
+        timestamp=client_ts or datetime.utcnow(),
     )
     triage_result=triage_report(report.emergency_text)
-    report.severity=triage_result["severity"]
+    report.severity=Severity(_normalize_severity(triage_result["severity"]))
     report.ai_reasoning=triage_result["reasoning"]
-    report.category = triage_result["category"]
+    report.category = EmergencyCategory(_normalize_category(triage_result.get("category") or str(report.category)))
     report.priority_rank = _derive_priority(report.severity, report.people_count)
     
     session.add(report)
@@ -180,9 +216,9 @@ async def websocket_endpoint(
                 timestamp=client_timestamp or datetime.utcnow(),
             )
             triage_result = triage_report(report.emergency_text)
-            report.severity = triage_result["severity"]
+            report.severity = Severity(_normalize_severity(triage_result["severity"]))
             report.ai_reasoning = triage_result["reasoning"]
-            report.category = triage_result["category"]
+            report.category = EmergencyCategory(_normalize_category(triage_result.get("category")))
             report.priority_rank = _derive_priority(report.severity, report.people_count)
 
             session.add(report)

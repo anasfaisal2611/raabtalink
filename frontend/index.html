@@ -3,102 +3,262 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0a0403" />
+    <meta name="theme-color" content="#0c1220" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>RaabtaLink</title>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="RaabtaLink — offline emergency rescue SOS with voice, GPS, and responder dashboard." />
+    <title>RaabtaLink · Rescue SOS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
     <link rel="manifest" href="./manifest.json" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="./vendor/leaflet/MarkerCluster.css" />
+    <link rel="stylesheet" href="./vendor/leaflet/MarkerCluster.Default.css" />
   </head>
   <body>
+    <div class="atmosphere" aria-hidden="true">
+      <span class="glow glow-red"></span>
+      <span class="glow glow-amber"></span>
+      <span class="grid-overlay"></span>
+    </div>
+
     <div class="app">
       <header class="topbar">
-        <h1>RaabtaLink</h1>
-        <p id="connectionStatus" class="net-pill" data-state="checking">Checking</p>
+        <div class="brand">
+          <span class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L3 7v6c0 5.25 3.75 10.15 9 11.35C17.25 23.15 21 18.25 21 13V7L12 2z" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </span>
+          <div>
+            <h1>RaabtaLink</h1>
+            <p class="brand-tag">Emergency Rescue Network</p>
+          </div>
+        </div>
+        <div class="conn-wrap">
+          <p id="connectionStatus" class="net-pill" data-state="checking">
+            <span class="net-dot"></span>
+            <span class="net-text">Checking…</span>
+          </p>
+          <span id="queueBadge" class="queue-badge" hidden>0</span>
+        </div>
       </header>
 
-      <!-- GPS Panel -->
-      <section class="panel gps-panel">
-        <div class="panel-label">📍 Location</div>
-        <p id="gpsStatus" class="gps-status" data-state="pending">Getting location…</p>
-        <p id="gpsCoords" class="gps-coords" hidden></p>
-        <p id="gpsSource" class="gps-source" hidden></p>
-        <div class="gps-actions">
-          <button id="retryGps" class="btn btn-sm" type="button" hidden>Retry GPS</button>
-          <button id="pickLocation" class="btn btn-sm" type="button">Pick manually</button>
-        </div>
-        <div id="locationPicker" class="location-picker" hidden>
-          <p class="picker-label">Select your area:</p>
-          <div id="locationGrid" class="location-grid"></div>
-        </div>
-      </section>
+      <nav class="main-tabs" aria-label="Main navigation">
+        <button class="main-tab is-active" data-view="sos" type="button">
+          <span class="tab-icon">🆘</span> SOS
+        </button>
+        <button class="main-tab" data-view="responder" type="button">
+          <span class="tab-icon">🚑</span> Responder
+        </button>
+      </nav>
 
-      <!-- People -->
-      <section class="panel people-panel">
-        <div class="panel-label">👥 People</div>
-        <div class="stepper">
-          <button id="peopleMinus" class="stepper-btn" type="button">−</button>
-          <span id="peopleCount" class="stepper-value">1</span>
-          <button id="peoplePlus" class="stepper-btn" type="button">+</button>
-        </div>
-      </section>
+      <main id="view-sos" class="view">
+        <section class="panel gps-panel panel-elevated">
+          <div class="panel-head">
+            <span class="panel-icon">📍</span>
+            <div>
+              <div class="panel-label">Your Location</div>
+              <p id="gpsStatus" class="gps-status" data-state="pending">Getting location…</p>
+            </div>
+          </div>
+          <div id="victimMapWrap" class="victim-map-wrap" hidden>
+            <div id="victimMap" class="victim-map" aria-label="Your location on map"></div>
+            <div class="map-pin-label">You are here</div>
+          </div>
+          <p id="gpsCoords" class="gps-coords" hidden></p>
+          <p id="gpsSource" class="gps-source" hidden></p>
+          <p id="landmarkLabel" class="landmark-label" hidden></p>
+          <div class="gps-actions">
+            <button id="retryGps" class="btn btn-ghost btn-sm" type="button" hidden>Retry GPS</button>
+            <button id="pickLocation" class="btn btn-ghost btn-sm" type="button">Pick on map</button>
+          </div>
+          <div id="locationPicker" class="location-picker" hidden>
+            <div class="picker-heading">
+              <p class="picker-label-en" id="pickerLabelEn">Near you — famous places</p>
+              <p class="picker-label-ur" id="pickerLabelUr" dir="rtl">آپ کے قریب — مشہور جگہیں</p>
+            </div>
+            <p id="pickerDetectedArea" class="picker-detected" hidden></p>
+            <div id="locationGrid" class="location-grid"></div>
+          </div>
+        </section>
 
-      <!-- Live Transcribe -->
-      <section class="panel live-panel">
-        <div class="panel-label">🎙️ Live Transcription</div>
-        <button id="liveBtn" class="btn live-btn" type="button">Start Live Transcribe</button>
-        <div id="liveTranscript" class="live-transcript" hidden>
-          <div id="liveTranscriptText" class="live-transcript-text"></div>
-          <div id="liveServerMsgs" class="live-server-msgs"></div>
-        </div>
-      </section>
+        <section class="panel panel-elevated">
+          <div class="panel-head">
+            <span class="panel-icon">⚠️</span>
+            <div class="panel-label">Emergency Type</div>
+          </div>
+          <div id="typeGrid" class="type-grid" role="radiogroup">
+            <button class="type-chip is-selected" type="button" data-type="medical" role="radio"><span class="chip-emoji">🏥</span>Medical</button>
+            <button class="type-chip" type="button" data-type="fire" role="radio"><span class="chip-emoji">🔥</span>Fire</button>
+            <button class="type-chip" type="button" data-type="trapped" role="radio"><span class="chip-emoji">🧱</span>Trapped</button>
+            <button class="type-chip" type="button" data-type="flood" role="radio"><span class="chip-emoji">🌊</span>Flood</button>
+            <button class="type-chip" type="button" data-type="other" role="radio"><span class="chip-emoji">❗</span>Other</button>
+          </div>
+        </section>
 
-      <!-- Status -->
-      <p id="appStatus" class="app-status">Ready</p>
+        <section class="panel people-panel panel-elevated">
+          <div class="panel-head">
+            <span class="panel-icon">👥</span>
+            <div class="panel-label">People Affected</div>
+          </div>
+          <div class="stepper">
+            <button id="peopleMinus" class="stepper-btn" type="button" aria-label="Fewer">−</button>
+            <span id="peopleCount" class="stepper-value">1</span>
+            <button id="peoplePlus" class="stepper-btn" type="button" aria-label="More">+</button>
+          </div>
+        </section>
 
-      <!-- Healthcare Responder Auth -->
-      <section class="panel auth-panel">
-        <div class="panel-label">🏥 Healthcare Responder</div>
+        <section class="panel panel-elevated">
+          <div class="panel-head">
+            <span class="panel-icon">📝</span>
+            <div class="panel-label">Describe Emergency</div>
+          </div>
+          <textarea id="emergencyText" class="sos-textarea" rows="3" placeholder="What happened? Injuries, dangers, access routes…"></textarea>
+        </section>
 
-        <!-- Logged-in profile (shown when authenticated) -->
-        <div id="responderProfile" class="responder-profile" hidden>
-          <p id="responderName" class="responder-name"></p>
-          <p id="responderOrg" class="responder-org"></p>
-          <p id="responderRole" class="responder-role"></p>
-          <button id="logoutBtn" class="btn btn-sm" type="button">Logout</button>
-        </div>
+        <section class="panel record-panel panel-elevated">
+          <div class="panel-head center">
+            <span class="panel-icon">🎙️</span>
+            <div class="panel-label">Voice SOS</div>
+          </div>
+          <p id="recordHint" class="record-hint">Hold to record your message</p>
+          <p id="recordTimer" class="record-timer" hidden>00:00</p>
+          <div class="record-zone">
+            <span class="record-ring" aria-hidden="true"></span>
+            <span class="record-ring ring-2" aria-hidden="true"></span>
+            <button id="recordBtn" class="record-btn" type="button" aria-label="Hold to record">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="3" width="6" height="11" rx="3" />
+                <path d="M6 11a6 6 0 0 0 12 0" fill="none" stroke="currentColor" stroke-width="2" />
+                <path d="M12 17v3M9 20h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+          <div id="playbackRow" class="playback-row" hidden>
+            <button id="playBtn" class="btn btn-ghost btn-sm" type="button">▶ Play</button>
+            <span id="audioMeta" class="audio-meta"></span>
+            <button id="clearAudioBtn" class="btn btn-ghost btn-sm" type="button">Clear</button>
+          </div>
+        </section>
 
-        <!-- Auth forms (shown when not authenticated) -->
-        <div id="authForms">
-          <div class="auth-tabs">
-            <button id="tabLogin" class="auth-tab is-active" type="button">Login</button>
-            <button id="tabRegister" class="auth-tab" type="button">Register</button>
+        <button id="submitSosBtn" class="send-btn" type="button">
+          <span class="send-icon">🚨</span>
+          <span>Send Rescue SOS</span>
+        </button>
+
+        <section class="panel live-panel panel-elevated">
+          <div class="panel-head center">
+            <span class="panel-icon">📡</span>
+            <div class="panel-label">Live Transcription</div>
+          </div>
+          <p class="live-note">Online only — speaks directly to rescue AI</p>
+          <button id="liveBtn" class="btn live-btn" type="button">Start Live Transcribe</button>
+          <div id="liveTranscript" class="live-transcript" hidden>
+            <div id="liveTranscriptText" class="live-transcript-text"></div>
+            <div id="liveServerMsgs" class="live-server-msgs"></div>
+          </div>
+        </section>
+
+        <p id="appStatus" class="app-status">Ready to send rescue signal</p>
+      </main>
+
+      <section id="view-responder" class="view" hidden>
+        <section class="panel auth-panel panel-elevated" id="authSection">
+          <div class="panel-head">
+            <span class="panel-icon">🏥</span>
+            <div class="panel-label">Healthcare Responder</div>
+          </div>
+          <div id="responderProfile" class="responder-profile" hidden>
+            <div class="profile-card">
+              <p id="responderName" class="responder-name"></p>
+              <p id="responderOrg" class="responder-org"></p>
+              <p id="responderRole" class="responder-role"></p>
+            </div>
+            <button id="logoutBtn" class="btn btn-ghost btn-sm" type="button">Logout</button>
+          </div>
+          <div id="authForms">
+            <div class="auth-tabs">
+              <button id="tabLogin" class="auth-tab is-active" type="button">Login</button>
+              <button id="tabRegister" class="auth-tab" type="button">Register</button>
+            </div>
+            <form id="loginForm" class="auth-form">
+              <input id="loginUser" class="auth-input" type="text" placeholder="Username" required />
+              <input id="loginPass" class="auth-input" type="password" placeholder="Password" required />
+              <button class="btn auth-submit" type="submit">Sign In</button>
+            </form>
+            <form id="registerForm" class="auth-form" hidden>
+              <input id="regUser" class="auth-input" type="text" placeholder="Username" required />
+              <input id="regEmail" class="auth-input" type="email" placeholder="Email" required />
+              <input id="regPass" class="auth-input" type="password" placeholder="Password" required />
+              <input id="regName" class="auth-input" type="text" placeholder="Full Name" required />
+              <input id="regOrg" class="auth-input" type="text" placeholder="Organization" required />
+              <input id="regLicense" class="auth-input" type="text" placeholder="License ID (optional)" />
+              <button class="btn auth-submit" type="submit">Create Account</button>
+            </form>
+            <p id="authMsg" class="auth-msg"></p>
+          </div>
+        </section>
+
+        <div id="dashboard" hidden>
+          <nav class="dash-tabs">
+            <button class="dash-tab is-active" data-dash="reports" type="button">📋 Incidents</button>
+            <button class="dash-tab" data-dash="map" type="button">🗺️ Live Map</button>
+            <button class="dash-tab" data-dash="logs" type="button">🤖 AI Logs</button>
+          </nav>
+
+          <div id="dash-reports" class="dash-panel">
+            <div class="filters">
+              <select id="filterStatus" class="filter-select">
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="dispatched">Dispatched</option>
+                <option value="escalated">Escalated</option>
+                <option value="monitoring">Monitoring</option>
+                <option value="needs_info">Needs info</option>
+              </select>
+              <select id="filterSeverity" class="filter-select">
+                <option value="">All severities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+              <button id="refreshReports" class="btn btn-ghost btn-sm" type="button">↻ Refresh</button>
+            </div>
+            <div id="reportsList" class="reports-list"></div>
+            <p id="reportsEmpty" class="empty-state" hidden>No reports found.</p>
           </div>
 
-          <!-- Login form -->
-          <form id="loginForm" class="auth-form">
-            <input id="loginUser" class="auth-input" type="text" placeholder="Username" required />
-            <input id="loginPass" class="auth-input" type="password" placeholder="Password" required />
-            <button class="btn auth-submit" type="submit">Login</button>
-          </form>
+          <div id="dash-map" class="dash-panel" hidden>
+            <div class="map-toolbar">
+              <span class="map-title">Rescue Operations Map</span>
+              <button id="fitMapBtn" class="btn btn-ghost btn-sm" type="button">Fit all</button>
+            </div>
+            <div class="map-legend">
+              <span><i class="leg-dot critical"></i> Critical</span>
+              <span><i class="leg-dot high"></i> High</span>
+              <span><i class="leg-dot medium"></i> Medium</span>
+              <span><i class="leg-dot low"></i> Low</span>
+              <span class="legend-cluster">⭕ Bubble = merged cluster</span>
+            </div>
+            <div id="mapContainer" class="map-container"></div>
+          </div>
 
-          <!-- Register form -->
-          <form id="registerForm" class="auth-form" hidden>
-            <input id="regUser" class="auth-input" type="text" placeholder="Username" required />
-            <input id="regEmail" class="auth-input" type="email" placeholder="Email" required />
-            <input id="regPass" class="auth-input" type="password" placeholder="Password" required />
-            <input id="regName" class="auth-input" type="text" placeholder="Full Name" required />
-            <input id="regOrg" class="auth-input" type="text" placeholder="Organization (hospital, NGO)" required />
-            <input id="regLicense" class="auth-input" type="text" placeholder="License ID (optional)" />
-            <button class="btn auth-submit" type="submit">Register</button>
-          </form>
-
-          <p id="authMsg" class="auth-msg"></p>
+          <div id="dash-logs" class="dash-panel" hidden>
+            <button id="refreshLogs" class="btn btn-ghost btn-sm" type="button">↻ Refresh logs</button>
+            <div id="agentLogsList" class="logs-list"></div>
+            <p id="logsEmpty" class="empty-state" hidden>No agent logs yet.</p>
+          </div>
         </div>
       </section>
     </div>
 
-    <script src="./app.js"></script>
+    <script src="./outbox.js"></script>
+    <script src="./vendor/leaflet/leaflet.js"></script>
+    <script src="./vendor/leaflet/leaflet.markercluster.js"></script>
+    <script src="./app.js?v=13"></script>
   </body>
 </html>
