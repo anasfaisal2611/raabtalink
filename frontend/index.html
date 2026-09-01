@@ -106,7 +106,7 @@
           </div>
           <div class="stepper">
             <button id="peopleMinus" class="stepper-btn" type="button" aria-label="Fewer">−</button>
-            <span id="peopleCount" class="stepper-value">1</span>
+            <input id="peopleCountInput" class="stepper-input" type="number" min="1" max="99" value="1" inputmode="numeric" aria-label="Number of people affected" />
             <button id="peoplePlus" class="stepper-btn" type="button" aria-label="More">+</button>
           </div>
         </section>
@@ -154,7 +154,7 @@
             <span class="panel-icon">📡</span>
             <div class="panel-label">Live Transcription</div>
           </div>
-          <p class="live-note">Online only — speaks directly to rescue AI</p>
+          <p class="live-note">Online only — speak in Urdu · اردو میں بولیں</p>
           <button id="liveBtn" class="btn live-btn" type="button">Start Live Transcribe</button>
           <div id="liveTranscript" class="live-transcript" hidden>
             <div id="liveTranscriptText" class="live-transcript-text"></div>
@@ -259,6 +259,6 @@
     <script src="./outbox.js"></script>
     <script src="./vendor/leaflet/leaflet.js"></script>
     <script src="./vendor/leaflet/leaflet.markercluster.js"></script>
-    <script src="./app.js?v=13"></script>
+    <script src="./app.js?v=14"></script>
   </body>
 </html>

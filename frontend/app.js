@@ -7,6 +7,12 @@ const SENDER_KEY = "raabta_sender_id";
 const LAST_SYNC_KEY = "raabta_last_sync";
 const MAX_PEOPLE = 99;
 
+function setPeopleCount(value) {
+  const n = Math.max(1, Math.min(MAX_PEOPLE, Number.parseInt(String(value), 10) || 1));
+  state.peopleCount = n;
+  if (els.peopleCountInput) els.peopleCountInput.value = String(n);
+}
+
 const NEARBY_LOCATION_LIMIT = 10;
 
 const state = {
@@ -50,7 +56,7 @@ function cacheEls() {
   [
     "connectionStatus", "queueBadge", "gpsStatus", "gpsCoords", "gpsSource",
     "retryGps", "pickLocation", "locationPicker", "locationGrid",
-    "peopleCount", "peopleMinus", "peoplePlus", "emergencyText",
+    "peopleCountInput", "peopleMinus", "peoplePlus", "emergencyText",
     "recordBtn", "recordHint", "recordTimer", "playbackRow", "playBtn",
     "audioMeta", "clearAudioBtn", "submitSosBtn", "liveBtn", "liveTranscript",
     "liveTranscriptText", "liveServerMsgs", "appStatus",
@@ -68,7 +74,7 @@ function cacheEls() {
   els.pickLocation = $("pickLocation");
   els.locationPicker = $("locationPicker");
   els.locationGrid = $("locationGrid");
-  els.peopleCount = $("peopleCount");
+  els.peopleCountInput = $("peopleCountInput");
   els.peopleMinus = $("peopleMinus");
   els.peoplePlus = $("peoplePlus");
   els.emergencyText = $("emergencyText");
@@ -1623,8 +1629,10 @@ function init() {
       if (state.gps.latitude != null) buildLocationPicker();
     }
   });
-  els.peopleMinus.addEventListener("click", () => { state.peopleCount = Math.max(1, state.peopleCount - 1); els.peopleCount.textContent = String(state.peopleCount); });
-  els.peoplePlus.addEventListener("click", () => { state.peopleCount = Math.min(MAX_PEOPLE, state.peopleCount + 1); els.peopleCount.textContent = String(state.peopleCount); });
+  els.peopleMinus.addEventListener("click", () => setPeopleCount(state.peopleCount - 1));
+  els.peoplePlus.addEventListener("click", () => setPeopleCount(state.peopleCount + 1));
+  els.peopleCountInput.addEventListener("change", () => setPeopleCount(els.peopleCountInput.value));
+  els.peopleCountInput.addEventListener("blur", () => setPeopleCount(els.peopleCountInput.value));
   els.playBtn.addEventListener("click", togglePlayback);
   els.clearAudioBtn.addEventListener("click", () => { setAudioBlob(null); els.recordHint.textContent = "Hold to record"; });
   els.submitSosBtn.addEventListener("click", submitSos);
