@@ -249,10 +249,12 @@ async function drainOutbox() {
   state.syncing = true;
   await updateConnectionUI();
 
+  let synced = 0;
   for (const item of items) {
     try {
       await submitOutboxItem(item);
       await OutboxDB.remove(item.sos_id);
+      synced += 1;
     } catch {
       item.retryCount = (item.retryCount || 0) + 1;
       item.lastAttempt = Date.now();
@@ -264,6 +266,12 @@ async function drainOutbox() {
   state.syncing = false;
   state.lastSyncAt = Date.now();
   localStorage.setItem(LAST_SYNC_KEY, String(state.lastSyncAt));
+  const remaining = await OutboxDB.count();
+  if (synced > 0 && remaining === 0) {
+    setStatus("Report submitted to base station", "saved");
+  } else if (synced > 0) {
+    setStatus(`Sent ${synced} — ${remaining} still queued`, "saved");
+  }
   await updateConnectionUI();
 }
 
@@ -1582,7 +1590,7 @@ function setupDashTabs() {
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("/app/sw.js").catch(() => {});
   }
 }
 

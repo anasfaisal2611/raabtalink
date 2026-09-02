@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from pathlib import Path
 from app.db import init_db
 from app.routers import sos, auth
@@ -28,6 +28,10 @@ def on_startup():
 @app.get("/health")
 def health():
     return {"status":"ok"}
+
+@app.get("/app")
+def app_root_redirect():
+    return RedirectResponse(url="/app/", status_code=307)
 
 # Serve the PWA frontend from /app route
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend"
