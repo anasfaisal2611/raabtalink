@@ -1,6 +1,18 @@
 /* ===== RaabtaLink PWA ===== */
 
-const API_BASE = `${location.protocol}//${location.host}`.replace(/\/app.*$/, "");
+function resolveApiBase() {
+  if (window.RAABTA_API) return String(window.RAABTA_API).replace(/\/$/, "");
+  return `${location.protocol}//${location.host}`.replace(/\/app.*$/, "");
+}
+
+function wsBaseUrl() {
+  const base = resolveApiBase();
+  const u = new URL(base);
+  const scheme = u.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${u.host}`;
+}
+
+const API_BASE = resolveApiBase();
 const TOKEN_KEY = "raabta_token";
 const GPS_CACHE_KEY = "raabta_last_gps";
 const SENDER_KEY = "raabta_sender_id";
@@ -960,8 +972,7 @@ async function startLiveTranscribe() {
       longitude: String(state.gps.longitude),
       people_count: String(state.peopleCount),
     });
-    const wsScheme = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${wsScheme}//${location.host}/sos/ws/listen?${params}`);
+    const ws = new WebSocket(`${wsBaseUrl()}/sos/ws/listen?${params}`);
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);

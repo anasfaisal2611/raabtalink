@@ -1,10 +1,11 @@
-const CACHE_VERSION = "raabtalink-v16";
+const CACHE_VERSION = "raabtalink-v17";
 const APP_SHELL = [
   "/app/",
   "/app/index.html",
   "/app/offline.html",
   "/app/style.css",
   "/app/app.js",
+  "/app/config.js",
   "/app/outbox.js",
   "/app/manifest.json",
   "/app/icons/icon.svg",

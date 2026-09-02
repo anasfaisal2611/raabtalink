@@ -1,17 +1,23 @@
 from faster_whisper import WhisperModel
 from scipy.io.wavfile import write
-import sounddevice as sd
-
-model = WhisperModel("small", device="cpu", compute_type="int8")
 
 SAMPLE_RATE = 16000
 DURATION = 5
 WHISPER_LANGUAGE = "ur"
 URDU_PROMPT = "یہ پاکستان میں اردو زبان میں ہنگامی اپیل ہے۔"
 
+_model = None
+
+
+def _get_model() -> WhisperModel:
+    global _model
+    if _model is None:
+        _model = WhisperModel("small", device="cpu", compute_type="int8")
+    return _model
+
 
 def transcribe_audio(file_path: str) -> str:
-    segments, _info = model.transcribe(
+    segments, _info = _get_model().transcribe(
         file_path,
         beam_size=5,
         vad_filter=True,
@@ -40,7 +46,9 @@ def transcribe_audio_bytes(raw_pcm: bytes) -> str:
 
 
 def listen_and_transcribe_audio() -> str:
-    """Record 5 seconds from the mic and transcribe in Urdu."""
+    """Record 5 seconds from the mic and transcribe in Urdu (local dev only)."""
+    import sounddevice as sd
+
     print("[Listening.... Speak now]")
     recording = sd.rec(
         int(DURATION * SAMPLE_RATE),
@@ -58,4 +66,3 @@ def listen_and_transcribe_audio() -> str:
 
     print(f"[Transcribed: {transcribed_text}]")
     return transcribed_text
-
