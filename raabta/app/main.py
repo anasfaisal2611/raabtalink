@@ -32,4 +32,9 @@ def health():
 # Serve the PWA frontend from /app route
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend"
 if FRONTEND_DIR.exists():
+    @app.get("/")
+    def root_redirect():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/app/index.html")
+
     app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
