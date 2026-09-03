@@ -1,10 +1,20 @@
 import json
+import re
 from typing import Any, Dict, Optional
 from pydantic import BaseModel
 
 import ollama
 from sqlmodel import Session
 from app.models import AgentLog
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences like ```json ... ``` from LLM output."""
+    text = text.strip()
+    match = re.match(r"^```(?:json)?\s*\n?(.*?)\n?\s*```$", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text
 
 
 class AgentResult(BaseModel):
@@ -27,8 +37,9 @@ class Agent:
                 messages=[{"role":"system","content":system_prompt},{"role":"user","content": user_prompt}]
             )
             raw_text=answer["message"]["content"]
+            clean_text = _strip_code_fences(raw_text)
             try:
-                parsed=json.loads(raw_text)
+                parsed=json.loads(clean_text)
             except json.JSONDecodeError:
                 parsed={**fallback, "reasoning": f"Could not parse model output: {raw_text[:100]}"}
         except Exception as e:

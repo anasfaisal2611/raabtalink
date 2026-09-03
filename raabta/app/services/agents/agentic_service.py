@@ -6,6 +6,7 @@ from app.services.agents.base import Agent, AgentResult
 
 SYSTEM_PROMPT = (
     "You are a Cluster Triage Agent for a disaster-response system. "
+    "Respond in English only. "
     "You will be given a group of emergency reports that have already been "
     "confirmed to be from the same geographic area (a 'cluster'). Each report "
     "already has a severity (critical|high|medium|low|unknown), a category "

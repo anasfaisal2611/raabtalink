@@ -1,2 +1,2 @@
-// Production backend URL (Render). Update after first Render deploy.
-window.RAABTA_API = "https://raabtalink-api.onrender.com";
+// Local development backend URL. Point to production after deploy.
+window.RAABTA_API = "";  // empty = same origin (http://localhost:8000)

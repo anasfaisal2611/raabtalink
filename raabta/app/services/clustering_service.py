@@ -4,11 +4,21 @@ from app.db import engine
 from app.models import SOSReport
 import ollama
 import json
+import re
 from app.services.agents.agentic_service import Clustering_Agent
+
+
+def _strip_code_fences(text: str) -> str:
+    text = text.strip()
+    match = re.match(r"^```(?:json)?\s*\n?(.*?)\n?\s*```$", text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text
 
 CLUSTERING_MODEL="qwen2.5:1.5b"
 CLUSTERING_PROMPT=(
-    "You are a disaster-response coordinator. You will be shown one new emergency report "
+    "You are a disaster-response coordinator. Respond in English only. "
+    "You will be shown one new emergency report "
     "and a list of nearby existing reports. Decide if the new report describes the SAME "
     "incident as any nearby report, or a DIFFERENT one. "
     "Respond with ONLY valid JSON in exactly this format: "
@@ -62,8 +72,9 @@ def find_duplicate_reports(nearby_reports:list,new_report):
         )
 
         raw_data=response["message"]["content"]
+        clean_data = _strip_code_fences(raw_data)
         try:
-            parsed=json.loads(raw_data)
+            parsed=json.loads(clean_data)
         except json.JSONDecodeError:
             parsed={"is_duplicate": False, "matching_sos_id": None, "reasoning": f"Could not parse: {raw_data[:100]}"}
     except Exception as e:

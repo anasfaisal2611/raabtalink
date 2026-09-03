@@ -14,6 +14,7 @@ from app.services.agents.base import Agent, AgentResult
 
 SYSTEM_PROMPT = (
     "You are the Command Agent for a disaster-response coordination centre. "
+    "Respond in English only. "
     "You will receive a list of active clusters, each already scored by a "
     "cluster-triage agent with a severity_score (0-100), estimated resources "
     "needed, total people affected, and recommended action.\n\n"
