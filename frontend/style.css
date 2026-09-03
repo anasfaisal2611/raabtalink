@@ -441,13 +441,32 @@ html, body {
   transition: all 0.2s;
 }
 .stepper-btn:hover { border-color: var(--sky); background: rgba(100, 210, 255, 0.1); }
-.stepper-value {
+.stepper-value,
+.stepper-input {
   font-family: var(--font-display);
   font-size: 2rem;
   font-weight: 800;
   min-width: 48px;
   text-align: center;
   color: var(--amber);
+}
+.stepper-input {
+  width: 72px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 6px 4px;
+  -moz-appearance: textfield;
+}
+.stepper-input::-webkit-outer-spin-button,
+.stepper-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.stepper-input:focus {
+  outline: none;
+  border-color: var(--sky);
+  box-shadow: 0 0 0 3px rgba(100, 210, 255, 0.12);
 }
 
 .sos-textarea {

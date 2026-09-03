@@ -1,11 +1,29 @@
 /* ===== RaabtaLink PWA ===== */
 
-const API_BASE = `${location.protocol}//${location.host}`.replace(/\/app.*$/, "");
+function resolveApiBase() {
+  if (window.RAABTA_API) return String(window.RAABTA_API).replace(/\/$/, "");
+  return `${location.protocol}//${location.host}`.replace(/\/app.*$/, "");
+}
+
+function wsBaseUrl() {
+  const base = resolveApiBase();
+  const u = new URL(base);
+  const scheme = u.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${u.host}`;
+}
+
+const API_BASE = resolveApiBase();
 const TOKEN_KEY = "raabta_token";
 const GPS_CACHE_KEY = "raabta_last_gps";
 const SENDER_KEY = "raabta_sender_id";
 const LAST_SYNC_KEY = "raabta_last_sync";
 const MAX_PEOPLE = 99;
+
+function setPeopleCount(value) {
+  const n = Math.max(1, Math.min(MAX_PEOPLE, Number.parseInt(String(value), 10) || 1));
+  state.peopleCount = n;
+  if (els.peopleCountInput) els.peopleCountInput.value = String(n);
+}
 
 const NEARBY_LOCATION_LIMIT = 10;
 
@@ -50,7 +68,7 @@ function cacheEls() {
   [
     "connectionStatus", "queueBadge", "gpsStatus", "gpsCoords", "gpsSource",
     "retryGps", "pickLocation", "locationPicker", "locationGrid",
-    "peopleCount", "peopleMinus", "peoplePlus", "emergencyText",
+    "peopleCountInput", "peopleMinus", "peoplePlus", "emergencyText",
     "recordBtn", "recordHint", "recordTimer", "playbackRow", "playBtn",
     "audioMeta", "clearAudioBtn", "submitSosBtn", "liveBtn", "liveTranscript",
     "liveTranscriptText", "liveServerMsgs", "appStatus",
@@ -68,7 +86,7 @@ function cacheEls() {
   els.pickLocation = $("pickLocation");
   els.locationPicker = $("locationPicker");
   els.locationGrid = $("locationGrid");
-  els.peopleCount = $("peopleCount");
+  els.peopleCountInput = $("peopleCountInput");
   els.peopleMinus = $("peopleMinus");
   els.peoplePlus = $("peoplePlus");
   els.emergencyText = $("emergencyText");
@@ -243,10 +261,12 @@ async function drainOutbox() {
   state.syncing = true;
   await updateConnectionUI();
 
+  let synced = 0;
   for (const item of items) {
     try {
       await submitOutboxItem(item);
       await OutboxDB.remove(item.sos_id);
+      synced += 1;
     } catch {
       item.retryCount = (item.retryCount || 0) + 1;
       item.lastAttempt = Date.now();
@@ -258,6 +278,12 @@ async function drainOutbox() {
   state.syncing = false;
   state.lastSyncAt = Date.now();
   localStorage.setItem(LAST_SYNC_KEY, String(state.lastSyncAt));
+  const remaining = await OutboxDB.count();
+  if (synced > 0 && remaining === 0) {
+    setStatus("Report submitted to base station", "saved");
+  } else if (synced > 0) {
+    setStatus(`Sent ${synced} — ${remaining} still queued`, "saved");
+  }
   await updateConnectionUI();
 }
 
@@ -946,8 +972,7 @@ async function startLiveTranscribe() {
       longitude: String(state.gps.longitude),
       people_count: String(state.peopleCount),
     });
-    const wsScheme = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${wsScheme}//${location.host}/sos/ws/listen?${params}`);
+    const ws = new WebSocket(`${wsBaseUrl()}/sos/ws/listen?${params}`);
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -1576,7 +1601,7 @@ function setupDashTabs() {
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("/app/sw.js").catch(() => {});
   }
 }
 
@@ -1623,8 +1648,10 @@ function init() {
       if (state.gps.latitude != null) buildLocationPicker();
     }
   });
-  els.peopleMinus.addEventListener("click", () => { state.peopleCount = Math.max(1, state.peopleCount - 1); els.peopleCount.textContent = String(state.peopleCount); });
-  els.peoplePlus.addEventListener("click", () => { state.peopleCount = Math.min(MAX_PEOPLE, state.peopleCount + 1); els.peopleCount.textContent = String(state.peopleCount); });
+  els.peopleMinus.addEventListener("click", () => setPeopleCount(state.peopleCount - 1));
+  els.peoplePlus.addEventListener("click", () => setPeopleCount(state.peopleCount + 1));
+  els.peopleCountInput.addEventListener("change", () => setPeopleCount(els.peopleCountInput.value));
+  els.peopleCountInput.addEventListener("blur", () => setPeopleCount(els.peopleCountInput.value));
   els.playBtn.addEventListener("click", togglePlayback);
   els.clearAudioBtn.addEventListener("click", () => { setAudioBlob(null); els.recordHint.textContent = "Hold to record"; });
   els.submitSosBtn.addEventListener("click", submitSos);

@@ -1,0 +1,15 @@
+# Render Blueprint — deploy backend at https://dashboard.render.com
+# New → Blueprint → connect GitHub repo → select this file
+services:
+  - type: web
+    name: raabtalink-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd raabta && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: SECRET_KEY
+        generateValue: true

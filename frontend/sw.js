@@ -1,23 +1,24 @@
-const CACHE_VERSION = "raabtalink-v13";
+const CACHE_VERSION = "raabtalink-v17";
 const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./offline.html",
-  "./style.css",
-  "./app.js",
-  "./outbox.js",
-  "./manifest.json",
-  "./icons/icon.svg",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./vendor/leaflet/leaflet.css",
-  "./vendor/leaflet/leaflet.js",
-  "./vendor/leaflet/MarkerCluster.css",
-  "./vendor/leaflet/MarkerCluster.Default.css",
-  "./vendor/leaflet/leaflet.markercluster.js",
-  "./vendor/leaflet/images/marker-icon.png",
-  "./vendor/leaflet/images/marker-icon-2x.png",
-  "./vendor/leaflet/images/marker-shadow.png",
+  "/app/",
+  "/app/index.html",
+  "/app/offline.html",
+  "/app/style.css",
+  "/app/app.js",
+  "/app/config.js",
+  "/app/outbox.js",
+  "/app/manifest.json",
+  "/app/icons/icon.svg",
+  "/app/icons/icon-192.png",
+  "/app/icons/icon-512.png",
+  "/app/vendor/leaflet/leaflet.css",
+  "/app/vendor/leaflet/leaflet.js",
+  "/app/vendor/leaflet/MarkerCluster.css",
+  "/app/vendor/leaflet/MarkerCluster.Default.css",
+  "/app/vendor/leaflet/leaflet.markercluster.js",
+  "/app/vendor/leaflet/images/marker-icon.png",
+  "/app/vendor/leaflet/images/marker-icon-2x.png",
+  "/app/vendor/leaflet/images/marker-shadow.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -39,10 +40,16 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   if (request.url.includes("/ws/") || request.url.includes("/sos/") || request.url.includes("/auth/")) return;
 
+  const pathname = new URL(request.url).pathname;
+  const isUnderApp = pathname === "/app" || pathname.startsWith("/app/");
+  if (!isUnderApp) return;
+
   const isAppShell =
-    request.url.includes("/app.js") ||
-    request.url.includes("/index.html") ||
-    request.url.includes("/style.css");
+    pathname.endsWith("/app.js") ||
+    pathname.endsWith("/style.css") ||
+    pathname.endsWith("/index.html") ||
+    pathname === "/app/" ||
+    pathname === "/app";
 
   if (isAppShell) {
     event.respondWith(
@@ -54,7 +61,9 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(request).then((c) => c || caches.match("./offline.html")))
+        .catch(() =>
+          caches.match(request).then((c) => c || caches.match("/app/offline.html"))
+        )
     );
     return;
   }
@@ -69,7 +78,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => cached || caches.match("./offline.html"));
+        .catch(() => cached || caches.match("/app/offline.html"));
       return cached || network;
     })
   );

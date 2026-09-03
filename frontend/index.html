@@ -4,10 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0c1220" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="RaabtaLink — offline emergency rescue SOS with voice, GPS, and responder dashboard." />
     <title>RaabtaLink · Rescue SOS</title>
+    <base href="/app/" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
@@ -106,7 +108,7 @@
           </div>
           <div class="stepper">
             <button id="peopleMinus" class="stepper-btn" type="button" aria-label="Fewer">−</button>
-            <span id="peopleCount" class="stepper-value">1</span>
+            <input id="peopleCountInput" class="stepper-input" type="number" min="1" max="99" value="1" inputmode="numeric" aria-label="Number of people affected" />
             <button id="peoplePlus" class="stepper-btn" type="button" aria-label="More">+</button>
           </div>
         </section>
@@ -154,7 +156,7 @@
             <span class="panel-icon">📡</span>
             <div class="panel-label">Live Transcription</div>
           </div>
-          <p class="live-note">Online only — speaks directly to rescue AI</p>
+          <p class="live-note">Online only — speak in Urdu · اردو میں بولیں</p>
           <button id="liveBtn" class="btn live-btn" type="button">Start Live Transcribe</button>
           <div id="liveTranscript" class="live-transcript" hidden>
             <div id="liveTranscriptText" class="live-transcript-text"></div>
@@ -256,9 +258,10 @@
       </section>
     </div>
 
+    <script src="./config.js"></script>
     <script src="./outbox.js"></script>
     <script src="./vendor/leaflet/leaflet.js"></script>
     <script src="./vendor/leaflet/leaflet.markercluster.js"></script>
-    <script src="./app.js?v=13"></script>
+    <script src="./app.js?v=17"></script>
   </body>
 </html>
