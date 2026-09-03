@@ -5,8 +5,8 @@ from app.services.agents.base import Agent, AgentResult
 
 
 SYSTEM_PROMPT = (
+    "IMPORTANT: ALL output must be in English. Do not use any non-English characters.\n\n"
     "You are a Cluster Triage Agent for a disaster-response system. "
-    "Respond in English only. "
     "You will be given a group of emergency reports that have already been "
     "confirmed to be from the same geographic area (a 'cluster'). Each report "
     "already has a severity (critical|high|medium|low|unknown), a category "
@@ -21,12 +21,13 @@ SYSTEM_PROMPT = (
     "2. estimated_resources_needed: a short string estimate, e.g. "
     "'2 ambulances, 1 rescue team' — based on people_count and severity in the cluster.\n"
     "3. recommended_action: one of 'dispatch_now', 'monitor', or 'needs_more_info'.\n"
-    "4. reasoning: one short sentence a human responder could read to understand "
+    "4. reasoning: one short English sentence a human responder could read to understand "
     "your decision at a glance.\n"
     "\n"
     "Respond with ONLY valid JSON in exactly this format, no extra text:\n"
     '{"severity_score": <int 0-100>, "estimated_resources_needed": "<string>", '
-    '"recommended_action": "dispatch_now|monitor|needs_more_info", "reasoning": "<string>"}'
+    '"recommended_action": "dispatch_now|monitor|needs_more_info", "reasoning": "<English string>"}\n\n'
+    "ALL text fields MUST be in English."
 )
 
 

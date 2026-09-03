@@ -15,14 +15,25 @@ def _strip_code_fences(text: str) -> str:
         return match.group(1).strip()
     return text
 
+
+def _has_non_ascii(text: str) -> bool:
+    try:
+        text.encode('ascii')
+        return False
+    except UnicodeEncodeError:
+        return True
+
+
 CLUSTERING_MODEL="qwen2.5:1.5b"
 CLUSTERING_PROMPT=(
-    "You are a disaster-response coordinator. Respond in English only. "
+    "IMPORTANT: ALL output must be in English. Do not use any non-English characters.\n\n"
+    "You are a disaster-response coordinator. "
     "You will be shown one new emergency report "
     "and a list of nearby existing reports. Decide if the new report describes the SAME "
     "incident as any nearby report, or a DIFFERENT one. "
-    "Respond with ONLY valid JSON in exactly this format: "
-    '{"is_duplicate": true|false, "matching_sos_id": "id or null", "reasoning": "one short sentence"}'
+    "Respond with ONLY valid JSON in exactly this format:\n"
+    '{"is_duplicate": true|false, "matching_sos_id": "id or null", "reasoning": "one short English sentence"}\n\n'
+    "The reasoning field MUST be in English."
 )
 
 
@@ -73,8 +84,23 @@ def find_duplicate_reports(nearby_reports:list,new_report):
 
         raw_data=response["message"]["content"]
         clean_data = _strip_code_fences(raw_data)
+        
+        # Retry if Chinese detected
+        if _has_non_ascii(clean_data):
+            response = ollama.chat(
+                model=CLUSTERING_MODEL,
+                messages=[
+                    {"role": "system", "content": CLUSTERING_PROMPT + "\n\nCRITICAL: Your previous response was not in English. You MUST respond in English only."},
+                    {"role": "user", "content": user_message}
+                ]
+            )
+            raw_data = response["message"]["content"]
+            clean_data = _strip_code_fences(raw_data)
+        
         try:
             parsed=json.loads(clean_data)
+            if "reasoning" in parsed and _has_non_ascii(parsed["reasoning"]):
+                parsed["reasoning"] = "Duplicate check completed (translation unavailable)"
         except json.JSONDecodeError:
             parsed={"is_duplicate": False, "matching_sos_id": None, "reasoning": f"Could not parse: {raw_data[:100]}"}
     except Exception as e:

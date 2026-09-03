@@ -17,6 +17,30 @@ def _strip_code_fences(text: str) -> str:
     return text
 
 
+def _has_non_ascii(text: str) -> bool:
+    """Check if text contains non-ASCII characters (e.g. Chinese)."""
+    try:
+        text.encode('ascii')
+        return False
+    except UnicodeEncodeError:
+        return True
+
+
+def _sanitize_dict_strings(d: dict) -> dict:
+    """Replace non-ASCII string values with a placeholder."""
+    result = {}
+    for k, v in d.items():
+        if isinstance(v, str) and _has_non_ascii(v):
+            result[k] = "Response processed (translation unavailable)"
+        elif isinstance(v, dict):
+            result[k] = _sanitize_dict_strings(v)
+        elif isinstance(v, list):
+            result[k] = [_sanitize_dict_strings(i) if isinstance(i, dict) else i for i in v]
+        else:
+            result[k] = v
+    return result
+
+
 class AgentResult(BaseModel):
     agent_name: str
     output: Dict[str, Any]
@@ -38,8 +62,23 @@ class Agent:
             )
             raw_text=answer["message"]["content"]
             clean_text = _strip_code_fences(raw_text)
+            
+            # Retry with stronger prompt if non-ASCII detected
+            if _has_non_ascii(clean_text):
+                answer = ollama.chat(
+                    model=self.llm,
+                    messages=[
+                        {"role": "system", "content": system_prompt + "\n\nCRITICAL: Your previous response was not in English. You MUST respond in English only."},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                raw_text = answer["message"]["content"]
+                clean_text = _strip_code_fences(raw_text)
+            
             try:
                 parsed=json.loads(clean_text)
+                # Sanitize any remaining non-ASCII strings
+                parsed = _sanitize_dict_strings(parsed)
             except json.JSONDecodeError:
                 parsed={**fallback, "reasoning": f"Could not parse model output: {raw_text[:100]}"}
         except Exception as e:

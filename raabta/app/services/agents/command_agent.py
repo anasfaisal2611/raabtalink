@@ -13,8 +13,8 @@ from app.services.agents.base import Agent, AgentResult
 
 
 SYSTEM_PROMPT = (
+    "IMPORTANT: ALL output must be in English. Do not use any non-English characters.\n\n"
     "You are the Command Agent for a disaster-response coordination centre. "
-    "Respond in English only. "
     "You will receive a list of active clusters, each already scored by a "
     "cluster-triage agent with a severity_score (0-100), estimated resources "
     "needed, total people affected, and recommended action.\n\n"
@@ -34,11 +34,12 @@ SYSTEM_PROMPT = (
     '      "rank": 1,\n'
     '      "responders_allocated": "2 ambulances, 1 rescue team",\n'
     '      "status": "allocated" | "queued",\n'
-    '      "reasoning": "one short sentence"\n'
+    '      "reasoning": "one short English sentence"\n'
     "    }\n"
     "  ],\n"
-    '  "overall_reasoning": "one sentence summary of the allocation decision"\n'
-    "}"
+    '  "overall_reasoning": "one English sentence summary of the allocation decision"\n'
+    "}\n\n"
+    "ALL text fields MUST be in English."
 )
 
 

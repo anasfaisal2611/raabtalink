@@ -26,8 +26,24 @@ def triage_report(emergency_text:str):
 
         raw_text=response["message"]["content"]
         clean_text = _strip_code_fences(raw_text)
+        
+        # If response has non-ASCII (Chinese), retry with stronger prompt
+        if _has_non_ascii(clean_text):
+            response = ollama.chat(
+                model=TRIAGE_MODEL,
+                messages=[
+                    {"role": "system", "content": TRIAGE_SYSTEM_PROMPT + "\n\nCRITICAL: Your previous response was not in English. You MUST respond in English only."},
+                    {"role": "user", "content": emergency_text}
+                ]
+            )
+            raw_text = response["message"]["content"]
+            clean_text = _strip_code_fences(raw_text)
+        
         try:
             parsed=json.loads(clean_text)
+            # Ensure reasoning field doesn't have non-ASCII
+            if "reasoning" in parsed and _has_non_ascii(parsed["reasoning"]):
+                parsed["reasoning"] = "Emergency detected (translation unavailable)"
         except json.JSONDecodeError:
             parsed={
                 "severity":"unknown",
