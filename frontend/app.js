@@ -1307,8 +1307,14 @@ async function loadReports() {
   const token = localStorage.getItem(TOKEN_KEY);
   if (!token) return;
 
-  const status = $("filterStatus").value;
-  const severity = $("filterSeverity").value;
+  // Push any locally queued SOS before refreshing the dashboard
+  if (navigator.onLine) {
+    const up = await pingBackend();
+    if (up) await drainOutbox();
+  }
+
+  const status = $("filterStatus")?.value || "";
+  const severity = $("filterSeverity")?.value || "";
   const params = new URLSearchParams({ skip: "0", limit: "50" });
   if (status) params.set("status", status);
   if (severity) params.set("severity", severity);
@@ -1318,14 +1324,26 @@ async function loadReports() {
       fetch(`${API_BASE}/sos/reports?${params}`, { headers: authHeaders() }),
       fetch(`${API_BASE}/sos/agent-logs?limit=50`, { headers: authHeaders() }),
     ]);
-    if (!reportsRes.ok) return;
+    if (!reportsRes.ok) {
+      const detail = await reportsRes.text().catch(() => "");
+      if (els.reportsEmpty) {
+        els.reportsEmpty.hidden = false;
+        els.reportsEmpty.textContent = `Could not load reports (${reportsRes.status}). ${detail.slice(0, 120)}`;
+      }
+      return;
+    }
     state.reports = await reportsRes.json();
     state.agentLogs = logsRes.ok ? await logsRes.json() : [];
     state.incidents = buildIncidents(state.reports);
     enrichIncidentsWithAgentLogs(state.incidents, state.agentLogs);
     renderReports();
     renderMapMarkers();
-  } catch (_) {}
+  } catch (err) {
+    if (els.reportsEmpty) {
+      els.reportsEmpty.hidden = false;
+      els.reportsEmpty.textContent = "Network error loading reports — tap Refresh.";
+    }
+  }
 }
 
 function renderIncidentReportsList(incident) {
@@ -1349,7 +1367,16 @@ function renderIncidentReportsList(incident) {
 
 function renderReports() {
   els.reportsList.innerHTML = "";
-  els.reportsEmpty.hidden = state.incidents.length > 0;
+  if (state.incidents.length === 0) {
+    els.reportsEmpty.hidden = false;
+    OutboxDB.count().then((n) => {
+      els.reportsEmpty.textContent = n > 0
+        ? `No reports on server yet — ${n} SOS still queued on this phone. Wait for “Base station online”, open SOS tab, then tap Refresh here.`
+        : "No reports on server yet. Send a text SOS while status shows Base station online, then tap Refresh.";
+    });
+    return;
+  }
+  els.reportsEmpty.hidden = true;
 
   state.incidents.forEach((inc) => {
     const card = document.createElement("article");
