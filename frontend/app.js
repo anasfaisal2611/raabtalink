@@ -165,15 +165,18 @@ async function pingBackend() {
   state.pingingBackend = true;
   await updateConnectionUI();
   const base = resolveApiBase();
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     try {
-      if (attempt > 0) await new Promise((r) => setTimeout(r, 10000));
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 8000));
       const res = await fetch(`${base}/health`, { cache: "no-store" });
-      state.backendReachable = res.ok;
-      state.pingingBackend = false;
-      return res.ok;
+      if (res.ok) {
+        state.backendReachable = true;
+        state.pingingBackend = false;
+        return true;
+      }
+      /* 502/404 while Render wakes or redeploys — keep retrying */
     } catch {
-      /* Render free tier cold start can take 30–60s */
+      /* network errors during cold start */
     }
   }
   state.backendReachable = false;
@@ -1039,6 +1042,12 @@ function showAuthMsg(msg, ok) {
 
 async function doRegister(e) {
   e.preventDefault();
+  showAuthMsg("Creating account…", true);
+  const online = await pingBackend();
+  if (!online) {
+    showAuthMsg("Server offline — wait for Base station online, then register again", false);
+    return;
+  }
   const body = {
     username: $("regUser").value.trim(),
     email: $("regEmail").value.trim(),
@@ -1047,28 +1056,50 @@ async function doRegister(e) {
     organization: $("regOrg").value.trim(),
     license_id: $("regLicense").value.trim() || null,
   };
-  const res = await fetch(`${API_BASE}/auth/register`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) { showAuthMsg(data.detail || "Registration failed", false); return; }
-  showAuthMsg(`Registered as ${data.username}. Log in now.`, true);
-  $("tabLogin").click();
+  try {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = typeof data.detail === "string" ? data.detail : "Registration failed";
+      showAuthMsg(detail, false);
+      return;
+    }
+    showAuthMsg(`Registered as ${data.username}. Log in now.`, true);
+    $("tabLogin").click();
+  } catch {
+    showAuthMsg("Cannot reach server — try again in a minute", false);
+  }
 }
 
 async function doLogin(e) {
   e.preventDefault();
-  const res = await fetch(`${API_BASE}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `username=${encodeURIComponent($("loginUser").value.trim())}&password=${encodeURIComponent($("loginPass").value)}`,
-  });
-  const data = await res.json();
-  if (!res.ok) { showAuthMsg(data.detail || "Login failed", false); return; }
-  localStorage.setItem(TOKEN_KEY, data.access_token);
-  showAuthMsg("", true);
-  await loadProfile();
-  startDashboardRefresh();
+  showAuthMsg("Signing in…", true);
+  const online = await pingBackend();
+  if (!online) {
+    showAuthMsg("Server offline — wait for Base station online, then sign in", false);
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `username=${encodeURIComponent($("loginUser").value.trim())}&password=${encodeURIComponent($("loginPass").value)}`,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = typeof data.detail === "string" ? data.detail : "Login failed";
+      showAuthMsg(detail, false);
+      return;
+    }
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    showAuthMsg("", true);
+    await loadProfile();
+    startDashboardRefresh();
+  } catch {
+    showAuthMsg("Cannot reach server — try again in a minute", false);
+  }
 }
 
 function doLogout() {
