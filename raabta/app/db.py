@@ -1,12 +1,15 @@
-from sqlmodel import SQLModel,Session,create_engine
+from sqlmodel import SQLModel, Session, create_engine
 from dotenv import load_dotenv
-
-load_dotenv()
 import os
 
-DATABASE_URL=os.getenv("DATABASE_URL")
+load_dotenv()
 
-engine=create_engine(DATABASE_URL)
+DATABASE_URL = os.getenv("DATABASE_URL") or "sqlite:///./raabtalink.db"
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+)
 def init_db():
     SQLModel.metadata.create_all(engine)
 

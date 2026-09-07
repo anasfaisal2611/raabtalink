@@ -42,6 +42,7 @@ const state = {
   timerId: null,
   playbackAudio: null,
   backendReachable: false,
+  pingingBackend: false,
   syncing: false,
   lastSyncAt: null,
   ws: null,
@@ -158,16 +159,26 @@ function authHeaders() {
 async function pingBackend() {
   if (!navigator.onLine) {
     state.backendReachable = false;
+    state.pingingBackend = false;
     return false;
   }
-  try {
-    const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
-    state.backendReachable = res.ok;
-    return res.ok;
-  } catch {
-    state.backendReachable = false;
-    return false;
+  state.pingingBackend = true;
+  await updateConnectionUI();
+  const base = resolveApiBase();
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 10000));
+      const res = await fetch(`${base}/health`, { cache: "no-store" });
+      state.backendReachable = res.ok;
+      state.pingingBackend = false;
+      return res.ok;
+    } catch {
+      /* Render free tier cold start can take 30–60s */
+    }
   }
+  state.backendReachable = false;
+  state.pingingBackend = false;
+  return false;
 }
 
 async function updateConnectionUI() {
@@ -179,6 +190,9 @@ async function updateConnectionUI() {
 
   if (state.syncing) {
     label = "Syncing…";
+    pill.dataset.state = "syncing";
+  } else if (state.pingingBackend) {
+    label = "Waking server…";
     pill.dataset.state = "syncing";
   } else if (!navigator.onLine || !state.backendReachable) {
     label = queueCount > 0 ? `Queued (${queueCount})` : "Out of range";
