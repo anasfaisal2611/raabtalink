@@ -239,22 +239,26 @@ function startConnectionMonitor() {
 
 async function submitOutboxItem(item) {
   if (item.type === "voice" && item.audioBlob) {
-    const fd = new FormData();
-    fd.append("audio", item.audioBlob, "sos.webm");
-    fd.append("sender_id", item.sender_id);
-    fd.append("latitude", String(item.latitude ?? ""));
-    fd.append("longitude", String(item.longitude ?? ""));
-    fd.append("people_count", String(item.people_count));
-    if (item.client_timestamp) fd.append("client_timestamp", item.client_timestamp);
-    const res = await fetch(`${API_BASE}/sos/voice`, { method: "POST", body: fd });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    try {
+      const fd = new FormData();
+      fd.append("audio", item.audioBlob, "sos.webm");
+      fd.append("sender_id", item.sender_id);
+      fd.append("latitude", String(item.latitude ?? ""));
+      fd.append("longitude", String(item.longitude ?? ""));
+      fd.append("people_count", String(item.people_count));
+      if (item.client_timestamp) fd.append("client_timestamp", item.client_timestamp);
+      const res = await fetch(`${API_BASE}/sos/voice`, { method: "POST", body: fd });
+      if (res.ok) return res.json();
+      /* Whisper on free Render often times out — fall through to text SOS */
+    } catch {
+      /* fall through to text */
+    }
   }
 
   const body = {
     sos_id: item.sos_id,
     sender_id: item.sender_id,
-    emergency_text: item.emergency_text,
+    emergency_text: item.emergency_text || "SOS (voice upload fallback)",
     latitude: item.latitude,
     longitude: item.longitude,
     people_count: item.people_count,
@@ -279,16 +283,23 @@ async function drainOutbox() {
   await updateConnectionUI();
 
   let synced = 0;
+  let failed = 0;
   for (const item of items) {
     try {
       await submitOutboxItem(item);
       await OutboxDB.remove(item.sos_id);
       synced += 1;
-    } catch {
+    } catch (err) {
       item.retryCount = (item.retryCount || 0) + 1;
       item.lastAttempt = Date.now();
+      item.lastError = String(err?.message || err).slice(0, 200);
       await OutboxDB.update(item);
-      break;
+      failed += 1;
+      /* Keep draining other items — one bad voice upload must not block text SOS */
+      if (item.retryCount >= 5) {
+        await OutboxDB.remove(item.sos_id);
+        failed -= 1;
+      }
     }
   }
 
@@ -300,6 +311,8 @@ async function drainOutbox() {
     setStatus("Report submitted to base station", "saved");
   } else if (synced > 0) {
     setStatus(`Sent ${synced} — ${remaining} still queued`, "saved");
+  } else if (failed > 0 && remaining > 0) {
+    setStatus("Server busy — queued reports will retry", "error");
   }
   await updateConnectionUI();
 }
