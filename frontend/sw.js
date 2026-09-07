@@ -1,4 +1,4 @@
-const CACHE_VERSION = "raabtalink-v20";
+const CACHE_VERSION = "raabtalink-v21";
 const APP_SHELL = [
   "/app/",
   "/app/index.html",
