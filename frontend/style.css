@@ -649,6 +649,13 @@ html, body {
 .auth-submit { width: 100%; background: linear-gradient(135deg, var(--rescue-red), #c41e14); border: 0; color: white; }
 .auth-ok { color: var(--mint); }
 .auth-err { color: var(--rescue-red); }
+.auth-hint {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted, #9aa4b2);
+  line-height: 1.35;
+}
+.auth-hint strong { color: var(--amber, #f4a261); }
 .profile-card {
   background: rgba(0, 0, 0, 0.25);
   border-radius: var(--radius-sm);

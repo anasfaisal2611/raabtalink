@@ -110,14 +110,22 @@ def login(
     session: Session = Depends(get_session),
 ):
     """Authenticate a healthcare responder and return a JWT."""
+    username = (form_data.username or "").strip()
     responder = session.exec(
-        select(Responder).where(Responder.username == form_data.username)
+        select(Responder).where(Responder.username == username)
     ).first()
 
-    if not responder or not verify_password(form_data.password, responder.hashed_password):
+    if responder is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password",
+            detail="Account not found. Register again, or use demo login: admin / admin123",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not verify_password(form_data.password, responder.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Wrong password. Free server resets wipe accounts — register again or use admin / admin123",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -131,6 +139,20 @@ def login(
         data={"sub": responder.responder_id, "role": responder.role}
     )
     return TokenResponse(access_token=token)
+
+
+@router.post("/ensure-demo")
+def ensure_demo(session: Session = Depends(get_session)):
+    """Re-seed demo accounts without waiting for a full server restart."""
+    from app.services.seed_service import seed_demo_responders
+    seed_demo_responders()
+    return {
+        "ok": True,
+        "accounts": [
+            {"username": "admin", "password": "admin123"},
+            {"username": "responder", "password": "responder123"},
+        ],
+    }
 
 
 @router.get("/me", response_model=MeResponse)

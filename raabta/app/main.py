@@ -33,6 +33,11 @@ app.include_router(auth.router)
 @app.on_event("startup")
 def on_startup():
     init_db()
+    try:
+        from app.services.seed_service import seed_demo_responders
+        seed_demo_responders()
+    except Exception as e:
+        print(f"[seed] Failed to seed demo responders: {e}")
 
 @app.get("/health")
 def health():
