@@ -1061,10 +1061,12 @@ async function doRegister(e) {
     showAuthMsg("Server offline — wait for Base station online, then register again", false);
     return;
   }
+  const username = $("regUser").value.trim();
+  const password = $("regPass").value;
   const body = {
-    username: $("regUser").value.trim(),
+    username,
     email: $("regEmail").value.trim(),
-    password: $("regPass").value,
+    password,
     full_name: $("regName").value.trim(),
     organization: $("regOrg").value.trim(),
     license_id: $("regLicense").value.trim() || null,
@@ -1079,8 +1081,25 @@ async function doRegister(e) {
       showAuthMsg(detail, false);
       return;
     }
-    showAuthMsg(`Registered as ${data.username}. Log in now.`, true);
+    // Auto-login so account works immediately (no "registered but can't login" confusion)
+    $("loginUser").value = username;
+    $("loginPass").value = password;
     $("tabLogin").click();
+    showAuthMsg("Registered — signing you in…", true);
+    const loginRes = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+    });
+    const loginData = await loginRes.json().catch(() => ({}));
+    if (!loginRes.ok) {
+      showAuthMsg("Registered, but login failed — try Sign In, or use admin / admin123", false);
+      return;
+    }
+    localStorage.setItem(TOKEN_KEY, loginData.access_token);
+    showAuthMsg("", true);
+    await loadProfile();
+    startDashboardRefresh();
   } catch {
     showAuthMsg("Cannot reach server — try again in a minute", false);
   }

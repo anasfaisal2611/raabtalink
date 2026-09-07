@@ -16,7 +16,7 @@
     <link rel="manifest" href="./manifest.json" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./style.css?v=24" />
     <link rel="stylesheet" href="./vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="./vendor/leaflet/MarkerCluster.css" />
     <link rel="stylesheet" href="./vendor/leaflet/MarkerCluster.Default.css" />
@@ -191,6 +191,7 @@
               <input id="loginPass" class="auth-input" type="password" placeholder="Password" required />
               <button class="btn auth-submit" type="submit">Sign In</button>
             </form>
+            <p class="auth-hint">Demo login: <strong>admin</strong> / <strong>admin123</strong> (works after server restart)</p>
             <form id="registerForm" class="auth-form" hidden>
               <input id="regUser" class="auth-input" type="text" placeholder="Username" required />
               <input id="regEmail" class="auth-input" type="email" placeholder="Email" required />
@@ -258,10 +259,10 @@
       </section>
     </div>
 
-    <script src="./config.js?v=5"></script>
+    <script src="./config.js?v=6"></script>
     <script src="./outbox.js"></script>
     <script src="./vendor/leaflet/leaflet.js"></script>
     <script src="./vendor/leaflet/leaflet.markercluster.js"></script>
-    <script src="./app.js?v=23"></script>
+    <script src="./app.js?v=24"></script>
   </body>
 </html>
