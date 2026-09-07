@@ -1105,6 +1105,14 @@ async function doRegister(e) {
   }
 }
 
+async function ensureDemoAccounts() {
+  try {
+    await fetch(`${API_BASE}/auth/ensure-demo`, { method: "POST" });
+  } catch {
+    /* optional — seed runs on server startup too */
+  }
+}
+
 async function doLogin(e) {
   e.preventDefault();
   showAuthMsg("Signing in…", true);
@@ -1113,6 +1121,7 @@ async function doLogin(e) {
     showAuthMsg("Server offline — wait for Base station online, then sign in", false);
     return;
   }
+  await ensureDemoAccounts();
   try {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
@@ -1140,21 +1149,45 @@ function doLogout() {
   $("responderProfile").hidden = true;
   $("authForms").hidden = false;
   els.dashboard.hidden = true;
+  state.reports = [];
+  state.incidents = [];
+  if (els.reportsList) els.reportsList.innerHTML = "";
+}
+
+function forceReLogin(message) {
+  doLogout();
+  showAuthMsg(
+    message || "Session expired after server reset — sign in again (admin / admin123)",
+    false
+  );
+  document.querySelectorAll(".main-tab").forEach((t) => {
+    t.classList.toggle("is-active", t.dataset.view === "responder");
+  });
+  if (els.viewSos) els.viewSos.hidden = true;
+  if (els.viewResponder) els.viewResponder.hidden = false;
+  $("tabLogin")?.click();
 }
 
 async function loadProfile() {
   const token = localStorage.getItem(TOKEN_KEY);
   if (!token) return;
-  const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
-  if (!res.ok) { localStorage.removeItem(TOKEN_KEY); return; }
-  const data = await res.json();
-  $("responderName").textContent = data.full_name;
-  $("responderOrg").textContent = data.organization;
-  $("responderRole").textContent = `Role: ${data.role}`;
-  $("responderProfile").hidden = false;
-  $("authForms").hidden = true;
-  els.dashboard.hidden = false;
-  await loadReports();
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+    if (!res.ok) {
+      forceReLogin("Session expired — sign in again (admin / admin123)");
+      return;
+    }
+    const data = await res.json();
+    $("responderName").textContent = data.full_name;
+    $("responderOrg").textContent = data.organization;
+    $("responderRole").textContent = `Role: ${data.role}`;
+    $("responderProfile").hidden = false;
+    $("authForms").hidden = true;
+    els.dashboard.hidden = false;
+    await loadReports();
+  } catch {
+    forceReLogin("Cannot verify login — wait for Base station online, then sign in again");
+  }
 }
 
 /* ---- Incidents (cluster + duplicate merge) ---- */
@@ -1325,6 +1358,10 @@ async function loadReports() {
       fetch(`${API_BASE}/sos/agent-logs?limit=50`, { headers: authHeaders() }),
     ]);
     if (!reportsRes.ok) {
+      if (reportsRes.status === 401) {
+        forceReLogin("Session expired after server reset — sign in again (admin / admin123)");
+        return;
+      }
       const detail = await reportsRes.text().catch(() => "");
       if (els.reportsEmpty) {
         els.reportsEmpty.hidden = false;
