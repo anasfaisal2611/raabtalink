@@ -7,7 +7,7 @@ from app.db import init_db
 from app.routers import sos, auth
 from app.models import Responder  # ensure table is created on startup
 
-app=FastAPI(title="Raabta Link Backend")
+app=FastAPI(title="Raabta Link Backend Emergenc Response Applicatioon")
 
 # CORS — kept for dev tools / external clients
 app.add_middleware(
